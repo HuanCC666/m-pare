@@ -10,7 +10,6 @@ import litellm
 from are.simulation.agents.are_simulation_agent_config import (
     LLMEngineConfig,
 )
-from are.simulation.scenario_runner import ScenarioRunnerConfig
 from are.simulation.scenarios.utils.scenario_expander import EnvEventsConfig
 from are.simulation.types import ToolAugmentationConfig
 from litellm.exceptions import (
@@ -32,6 +31,7 @@ from pytz import timezone
 
 from pare.logging_config import configure_logging, suppress_noisy_are_loggers, suppress_noisy_loggers
 from pare.scenario_runner import TwoAgentScenarioRunner
+from pare.scenarios.config import ScenarioRunnerConfig
 from pare.scenarios.utils.registry import registry
 from pare.scenarios.utils.scenario_expander import default_weight_per_app_class
 
