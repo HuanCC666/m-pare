@@ -28,9 +28,9 @@ class RiceCookerPhotoCartSuggestion(PAREScenario):
     The user is outside and sends a photo of a rice cooker they want. The assistant must:
     1. Read the incoming message that includes the image attachment.
     2. Ground intent from photo context ("I want this rice cooker").
-    3. Search the shopping app for the matching product.
+    3. Search the shopping app for a matching rice cooker product.
     4. Proactively suggest adding the product to cart.
-    5. After user acceptance, add the selected rice cooker to cart.
+    5. After user acceptance, add a rice cooker item to cart.
 
     This scenario focuses on multimodal intent grounding (image + short text),
     shopping retrieval, and proactive cart assistance.
@@ -47,7 +47,7 @@ class RiceCookerPhotoCartSuggestion(PAREScenario):
 
     # Preferred: set env var PARE_RICE_COOKER_PHOTO_LOCAL_PATH to a local file path.
     # Fallback: in-repo default under this scenario directory.
-    DEFAULT_LOCAL_RICE_COOKER_PHOTO_PATH = Path(__file__).parent / "assets" / "rice_cooker_photo.jpg"
+    DEFAULT_LOCAL_RICE_COOKER_PHOTO_PATH = Path(__file__).parent / "assets" / "photo.jpg"
 
     def init_and_populate_apps(self, *args: Any, **kwargs: Any) -> None:
         """Initialize apps and seed rice cooker catalog + image attachment."""
@@ -60,7 +60,7 @@ class RiceCookerPhotoCartSuggestion(PAREScenario):
 
         self.shopping = StatefulShoppingApp(name="Shopping")
 
-        # Load a real rice cooker photo from local filesystem into sandbox FS for attachment.
+        # Load a real photo from local filesystem into sandbox FS for attachment.
         local_photo_path = Path(
             os.getenv("PARE_RICE_COOKER_PHOTO_LOCAL_PATH", str(self.DEFAULT_LOCAL_RICE_COOKER_PHOTO_PATH))
         )
@@ -70,29 +70,38 @@ class RiceCookerPhotoCartSuggestion(PAREScenario):
                 "Set PARE_RICE_COOKER_PHOTO_LOCAL_PATH or place the image at "
                 f"{self.DEFAULT_LOCAL_RICE_COOKER_PHOTO_PATH}."
             )
-        with self.files.open("/rice_cooker_photo.jpg", "wb") as f:
+        # Store under a non-informative filename so filename doesn't leak semantics.
+        with self.files.open("/photo.jpg", "wb") as f:
             f.write(local_photo_path.read_bytes())
 
         self.user_photo_email_id = "email-user-rice-cooker-photo"
-        # Seed shopping catalog with a clear target product and distractors.
-        target_pid = self.shopping.add_product(name="HeatMaster Rice Cooker HM-RC30 3L")
-        self.target_item_id = self.shopping.add_item_to_product(
-            product_id=target_pid,
+        # Seed shopping catalog with one rice cooker target and non-rice-cooker distractors.
+        rice_cooker_pid = self.shopping.add_product(name="HomeEase Rice Cooker 3L")
+        self.rice_cooker_item_id = self.shopping.add_item_to_product(
+            product_id=rice_cooker_pid,
             price=79.99,
             options={
-                "color": "stainless steel",
+                "color": "white",
                 "capacity_l": 3.0,
-                "model": "HM-RC30",
+                "material": "nonstick inner pot",
                 "warranty": "2 years",
             },
             available=True,
         )
 
-        other_pid = self.shopping.add_product(name="HeatMaster Rice Cooker HM-RC50 5L")
-        self.secondary_item_id = self.shopping.add_item_to_product(
-            product_id=other_pid,
-            price=99.99,
-            options={"color": "black", "capacity_l": 5.0, "model": "HM-RC50"},
+        kettle_pid = self.shopping.add_product(name="QuickBoil Electric Kettle 1.8L")
+        self.kettle_item_id = self.shopping.add_item_to_product(
+            product_id=kettle_pid,
+            price=39.99,
+            options={"color": "silver", "capacity_l": 1.8, "power_w": 1500},
+            available=True,
+        )
+
+        blender_pid = self.shopping.add_product(name="FreshBlend Blender 700W")
+        self.blender_item_id = self.shopping.add_item_to_product(
+            product_id=blender_pid,
+            price=59.99,
+            options={"color": "black", "power_w": 700, "jar_l": 1.5},
             available=True,
         )
 
@@ -116,7 +125,7 @@ class RiceCookerPhotoCartSuggestion(PAREScenario):
                         "Check the attached photo and find it in Shopping for me - "
                         "can you add it to my cart?"
                     ),
-                    attachment_paths=["/rice_cooker_photo.jpg"],
+                    attachment_paths=["/photo.jpg"],
                 )
                 .oracle()
                 .delayed(10)
@@ -129,7 +138,7 @@ class RiceCookerPhotoCartSuggestion(PAREScenario):
             )
 
             view_photo_event = (
-                files_app.display(path="/rice_cooker_photo.jpg").oracle().depends_on(read_email_event, delay_seconds=1)
+                files_app.display(path="/photo.jpg").oracle().depends_on(read_email_event, delay_seconds=1)
             )
 
             proposal_event = (
@@ -147,7 +156,7 @@ class RiceCookerPhotoCartSuggestion(PAREScenario):
             )
 
             add_to_cart_event = (
-                shopping_app.add_to_cart(item_id=self.target_item_id, quantity=1)
+                shopping_app.add_to_cart(item_id=self.rice_cooker_item_id, quantity=1)
                 .oracle()
                 .depends_on(acceptance_event, delay_seconds=1)
             )
@@ -166,12 +175,14 @@ class RiceCookerPhotoCartSuggestion(PAREScenario):
         try:
             log_entries = env.event_log.list_view()
 
+            allow_any_event_type = bool(getattr(env, "oracle_mode", False))
+            expected_photo_paths = {"/photo.jpg"}
             viewed_image_found = any(
-                e.event_type == EventType.AGENT
+                (allow_any_event_type or e.event_type == EventType.AGENT)
                 and isinstance(e.action, Action)
                 and e.action.class_name == "SandboxLocalFileSystem"
                 and e.action.function_name in ("display", "cat", "read_document")
-                and "rice_cooker" in str(e.action.args.get("path", ""))
+                and str(e.action.args.get("path", "")) in expected_photo_paths
                 for e in log_entries
             )
 
@@ -183,24 +194,25 @@ class RiceCookerPhotoCartSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            add_to_cart_found = any(
+            add_rice_cooker_to_cart_found = any(
                 e.event_type == EventType.AGENT
                 and isinstance(e.action, Action)
                 and e.action.class_name == "StatefulShoppingApp"
                 and e.action.function_name == "add_to_cart"
+                and str(e.action.args.get("item_id", "")) == self.rice_cooker_item_id
                 and int(e.action.args.get("quantity", 0) or 0) >= 1
                 for e in log_entries
             )
 
-            success = viewed_image_found and proposal_found and add_to_cart_found
+            success = viewed_image_found and proposal_found and add_rice_cooker_to_cart_found
             if not success:
                 failed_checks = []
                 if not viewed_image_found:
                     failed_checks.append("agent did not view the photo via Files tools")
                 if not proposal_found:
                     failed_checks.append("(info) agent did not send a user-facing proposal")
-                if not add_to_cart_found:
-                    failed_checks.append("agent did not add an item to cart")
+                if not add_rice_cooker_to_cart_found:
+                    failed_checks.append("agent did not add a rice cooker item to cart")
                 return ScenarioValidationResult(success=False, rationale="; ".join(failed_checks))
 
             return ScenarioValidationResult(success=True)

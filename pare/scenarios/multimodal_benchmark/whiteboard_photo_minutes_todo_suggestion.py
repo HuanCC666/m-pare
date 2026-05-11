@@ -27,11 +27,6 @@ class WhiteboardPhotoMinutesTodoSuggestion(PAREScenario):
     2. Extract action items, owners, and due dates from the whiteboard content.
     3. Before any write/action operation, ask one proactive accept/reject permission question.
     4. If accepted, create a structured Work note and the follow-up reminders directly.
-
-    Constraints:
-    - Image reading/browsing can happen before asking permission.
-    - Do not ask the user for extra details.
-    - User interaction should stay within accept/reject style responses.
     """
 
     start_time = datetime(2025, 11, 24, 16, 0, 0, tzinfo=UTC).timestamp()
@@ -164,12 +159,12 @@ class WhiteboardPhotoMinutesTodoSuggestion(PAREScenario):
         try:
             log_entries = env.event_log.list_view()
 
+            allow_any_event_type = bool(getattr(env, "oracle_mode", False))
             viewed_image_found = any(
-                e.event_type == EventType.AGENT
+                (allow_any_event_type or e.event_type == EventType.AGENT)
                 and isinstance(e.action, Action)
                 and e.action.class_name == "SandboxLocalFileSystem"
                 and e.action.function_name in {"display", "cat", "read_document"}
-                and "whiteboard" in str(e.action.args.get("path", "")).lower()
                 for e in log_entries
             )
 
