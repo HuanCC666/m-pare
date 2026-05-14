@@ -14,6 +14,8 @@ from are.simulation.types import AbstractEnvironment, Action, EventRegisterer, E
 from pare.apps import HomeScreenSystemApp, PAREAgentUserInterface, StatefulEmailApp
 from pare.apps.reminder import StatefulReminderApp
 from pare.scenarios import PAREScenario
+from pare.scenarios.multimodal_benchmark.lib.agent_image_view_log import log_has_agent_image_view
+from pare.scenarios.multimodal_benchmark.lib.jpeg_for_sandbox import jpeg_bytes_for_sandbox
 from pare.scenarios.utils.registry import register_scenario
 
 
@@ -27,6 +29,11 @@ class BillScreenshotPaymentReminderSuggestion(PAREScenario):
     3. Ask one proactive accept/reject permission question before creating a reminder.
     4. If accepted, create the reminder directly.
 
+    This scenario evaluates:
+    - multimodal grounding on a bill screenshot
+    - proactive permission before side-effect writes
+    - cross-app reasoning (Email + Files + Reminders)
+
     Constraints:
     - Image reading/browsing can happen before permission.
     - Do not ask for extra details.
@@ -34,6 +41,7 @@ class BillScreenshotPaymentReminderSuggestion(PAREScenario):
     """
 
     start_time = datetime(2025, 11, 20, 19, 0, 0, tzinfo=UTC).timestamp()
+
     status = ScenarioStatus.Valid
     is_benchmark_ready = True
 
@@ -58,12 +66,18 @@ class BillScreenshotPaymentReminderSuggestion(PAREScenario):
                 f"{self.DEFAULT_LOCAL_BILL_IMAGE_PATH}."
             )
         with self.files.open("/utility_bill_screenshot.jpg", "wb") as f:
-            f.write(local_bill_path.read_bytes())
+            f.write(jpeg_bytes_for_sandbox(local_bill_path.read_bytes()))
 
         due_base = datetime.fromtimestamp(self.start_time, tz=UTC) + timedelta(days=8)
         self.reminder_due_datetime = due_base.replace(hour=9, minute=0, second=0).strftime("%Y-%m-%d %H:%M:%S")
         self.bill_email_id = "monthly_bill_screenshot_email"
-        self.apps = [self.agent_ui, self.system_app, self.files, self.email, self.reminder]
+        self.apps = [
+            self.agent_ui,
+            self.system_app,
+            self.files,
+            self.email,
+            self.reminder,
+        ]
 
     def build_events_flow(self) -> None:
         """Build minimal executable oracle flow for multimodal reminder assistance."""
@@ -73,17 +87,19 @@ class BillScreenshotPaymentReminderSuggestion(PAREScenario):
         reminder_app = self.get_typed_app(StatefulReminderApp, "Reminders")
 
         with EventRegisterer.capture_mode():
-            inject_email_event = (
-                email_app.send_email_to_user_with_id(
-                    email_id=self.bill_email_id,
-                    sender="billing@city-utilities.com",
-                    subject="Your latest bill statement",
-                    content="Please see the attached bill screenshot from today. I am in transit now.",
-                    attachment_paths=["/utility_bill_screenshot.jpg"],
-                )
-                .oracle()
-                .delayed(8)
-            )
+            inject_email_event = email_app.send_email_to_user_with_id(
+                email_id=self.bill_email_id,
+                sender="billing@city-utilities.com",
+                subject="Your latest bill statement",
+                content=(
+                    "Your current City Utilities statement is attached.\n\n"
+                    "Amount due and payment due date are shown on the statement image. "
+                    "Feel free to set a reminder so it doesn't sneak up on you.\n\n"
+                    "If you have questions about charges, reply to this message or call the number on your bill.\n\n"
+                    "Thank you,\nCity Utilities Billing"
+                ),
+                attachment_paths=["/utility_bill_screenshot.jpg"],
+            ).delayed(8)
 
             read_email_event = (
                 email_app.get_email_by_id(email_id=self.bill_email_id, folder_name="INBOX")
@@ -130,17 +146,29 @@ class BillScreenshotPaymentReminderSuggestion(PAREScenario):
             create_reminder_event,
         ]
 
-    def validate(self, env: AbstractEnvironment) -> ScenarioValidationResult:
-        """Validate that the agent viewed the bill image, proposed, and saved a reminder."""
+    def validate(
+        self,
+        env: AbstractEnvironment,
+    ) -> ScenarioValidationResult:
+        """Validate multimodal proactive reminder behavior."""
         try:
             log_entries = env.event_log.list_view()
 
             allow_any_event_type = bool(getattr(env, "oracle_mode", False))
-            viewed_image_found = any(
-                (allow_any_event_type or e.event_type == EventType.AGENT)
+
+            photo_visual_input_found = log_has_agent_image_view(
+                log_entries,
+                allow_any_event_type=allow_any_event_type,
+                image_path="/utility_bill_screenshot.jpg",
+                email_id=self.bill_email_id,
+            )
+
+            reminder_with_due_found = any(
+                e.event_type == EventType.AGENT
                 and isinstance(e.action, Action)
-                and e.action.class_name == "SandboxLocalFileSystem"
-                and e.action.function_name in {"display", "cat", "read_document"}
+                and e.action.class_name == "StatefulReminderApp"
+                and e.action.function_name == "add_reminder"
+                and bool(str(e.action.args.get("due_datetime", "")).strip())
                 for e in log_entries
             )
 
@@ -152,26 +180,54 @@ class BillScreenshotPaymentReminderSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            reminder_saved_found = any(
+            reminder_expected_due_found = any(
                 e.event_type == EventType.AGENT
                 and isinstance(e.action, Action)
                 and e.action.class_name == "StatefulReminderApp"
                 and e.action.function_name == "add_reminder"
-                and bool(str(e.action.args.get("due_datetime", "")).strip())
+                and str(e.action.args.get("due_datetime", "")).strip() == self.reminder_due_datetime
                 for e in log_entries
             )
 
-            success = viewed_image_found and proposal_found and reminder_saved_found
+            success = (
+                photo_visual_input_found and reminder_with_due_found and proposal_found and reminder_expected_due_found
+            )
+
             if not success:
-                failed_checks = []
-                if not viewed_image_found:
-                    failed_checks.append("agent did not open the bill image")
-                if not proposal_found:
-                    failed_checks.append("agent did not send a proactive reminder proposal")
-                if not reminder_saved_found:
-                    failed_checks.append("agent did not save a valid payment reminder")
-                return ScenarioValidationResult(success=False, rationale="; ".join(failed_checks))
+                failed_checks: list[str] = []
+
+                #
+                # Failure analysis
+                #
+
+                if not photo_visual_input_found:
+                    failed_checks.append(
+                        "agent never accessed the bill screenshot (no Files read of /utility_bill_screenshot.jpg "
+                        "and no Email read/download for the inbox message with the attachment)"
+                    )
+
+                if photo_visual_input_found and not reminder_with_due_found:
+                    failed_checks.append(
+                        "agent viewed the bill image but did not create a payment reminder with a due datetime"
+                    )
+
+                if reminder_with_due_found and not proposal_found:
+                    failed_checks.append(
+                        "agent created a reminder signal but did not proactively propose assistance to the user"
+                    )
+
+                if not reminder_expected_due_found:
+                    failed_checks.append("agent did not create the reminder with the expected due datetime")
+
+                return ScenarioValidationResult(
+                    success=False,
+                    rationale="; ".join(failed_checks),
+                )
 
             return ScenarioValidationResult(success=True)
+
         except Exception as e:
-            return ScenarioValidationResult(success=False, exception=e)
+            return ScenarioValidationResult(
+                success=False,
+                exception=e,
+            )

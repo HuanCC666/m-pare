@@ -15,6 +15,8 @@ from pare.apps import HomeScreenSystemApp, PAREAgentUserInterface, StatefulCalen
 from pare.apps.apartment import StatefulApartmentApp
 from pare.apps.cab import StatefulCabApp
 from pare.scenarios import PAREScenario
+from pare.scenarios.multimodal_benchmark.lib.agent_image_view_log import log_has_agent_image_view
+from pare.scenarios.multimodal_benchmark.lib.jpeg_for_sandbox import jpeg_bytes_for_sandbox
 from pare.scenarios.utils.registry import register_scenario
 
 
@@ -61,11 +63,9 @@ class RentalPosterViewingPlanSuggestion(PAREScenario):
                 f"{self.DEFAULT_LOCAL_POSTER_PATH}."
             )
         with self.files.open("/rental_poster_photo.jpg", "wb") as f:
-            f.write(local_poster_path.read_bytes())
+            f.write(jpeg_bytes_for_sandbox(local_poster_path.read_bytes()))
 
         self.rental_email_id = "rental_poster_email"
-        # Seed listings. Target listing should match likely poster constraints:
-        # Northside, <= $2200, 2 bedrooms.
         self.target_apartment_id = self.apartment.add_new_apartment(
             name="Northside Garden Homes",
             location="Northside District, 88 Cedar Ave",
@@ -142,17 +142,18 @@ class RentalPosterViewingPlanSuggestion(PAREScenario):
         cab_app = self.get_typed_app(StatefulCabApp, "Cab")
 
         with EventRegisterer.capture_mode():
-            inject_email_event = (
-                email_app.send_email_to_user_with_id(
-                    email_id=self.rental_email_id,
-                    sender="user.mobile@local",
-                    subject="Rental poster snapshot",
-                    content="Saw this poster outside and shared it here.",
-                    attachment_paths=["/rental_poster_photo.jpg"],
-                )
-                .oracle()
-                .delayed(8)
-            )
+            inject_email_event = email_app.send_email_to_user_with_id(
+                email_id=self.rental_email_id,
+                sender="user.mobile@local",
+                subject="Rental poster snapshot",
+                content=(
+                    "Saw this taped up on my walk home, snapped a pic. "
+                    "No idea if it's legit or already gone but figured I'd send it your way in case anything close is listed. "
+                    "If it looks real, maybe see whether anything similar is actually renting nearby? "
+                    "If I toured this week I'd want an afternoon that fits my calendar and a rough sense what a ride from downtown would cost."
+                ),
+                attachment_paths=["/rental_poster_photo.jpg"],
+            ).delayed(8)
 
             read_email_event = (
                 email_app.get_email_by_id(email_id=self.rental_email_id, folder_name="INBOX")
@@ -207,17 +208,33 @@ class RentalPosterViewingPlanSuggestion(PAREScenario):
             logistics_action_event,
         ]
 
-    def validate(self, env: AbstractEnvironment) -> ScenarioValidationResult:
-        """Validate that the agent viewed the poster and executed rental planning actions."""
+    def validate(
+        self,
+        env: AbstractEnvironment,
+    ) -> ScenarioValidationResult:
+        """Validate multimodal proactive shopping behavior."""
         try:
             log_entries = env.event_log.list_view()
 
             allow_any_event_type = bool(getattr(env, "oracle_mode", False))
-            viewed_image_found = any(
-                (allow_any_event_type or e.event_type == EventType.AGENT)
+
+            photo_visual_input_found = log_has_agent_image_view(
+                log_entries,
+                allow_any_event_type=allow_any_event_type,
+                image_path="/rental_poster_photo.jpg",
+                email_id=self.rental_email_id,
+            )
+
+            listing_search_grounded_found = any(
+                e.event_type == EventType.AGENT
                 and isinstance(e.action, Action)
-                and e.action.class_name == "SandboxLocalFileSystem"
-                and e.action.function_name in {"display", "cat", "read_document"}
+                and e.action.class_name == "StatefulApartmentApp"
+                and e.action.function_name in ("search_apartments", "save_apartment", "get_apartment_details")
+                and (
+                    self.target_apartment_id in str(e.action.args)
+                    or "northside" in str(e.action.args).lower()
+                    or str(self.target_listing_price) in str(e.action.args)
+                )
                 for e in log_entries
             )
 
@@ -229,15 +246,7 @@ class RentalPosterViewingPlanSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            apartment_action_found = any(
-                e.event_type == EventType.AGENT
-                and isinstance(e.action, Action)
-                and e.action.class_name == "StatefulApartmentApp"
-                and e.action.function_name in {"search_apartments", "save_apartment", "get_apartment_details"}
-                for e in log_entries
-            )
-
-            logistics_action_found = any(
+            viewing_schedule_or_cab_found = any(
                 e.event_type == EventType.AGENT
                 and isinstance(e.action, Action)
                 and (
@@ -250,19 +259,50 @@ class RentalPosterViewingPlanSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            success = viewed_image_found and proposal_found and apartment_action_found and logistics_action_found
+            success = (
+                photo_visual_input_found
+                and listing_search_grounded_found
+                and proposal_found
+                and viewing_schedule_or_cab_found
+            )
+
             if not success:
-                failed_checks = []
-                if not viewed_image_found:
-                    failed_checks.append("agent did not inspect rental poster image")
-                if not proposal_found:
-                    failed_checks.append("agent did not send a proactive plan proposal")
-                if not apartment_action_found:
-                    failed_checks.append("agent did not take apartment-planning action")
-                if not logistics_action_found:
-                    failed_checks.append("agent did not take scheduling/logistics action")
-                return ScenarioValidationResult(success=False, rationale="; ".join(failed_checks))
+                failed_checks: list[str] = []
+
+                #
+                # Failure analysis
+                #
+
+                if not photo_visual_input_found:
+                    failed_checks.append(
+                        "agent never accessed the rental poster image (no Files read of /rental_poster_photo.jpg "
+                        "and no Email read/download for the inbox message with the attachment)"
+                    )
+
+                if photo_visual_input_found and not listing_search_grounded_found:
+                    failed_checks.append(
+                        "agent viewed the poster but failed to ground a matching apartment search in Apartment"
+                    )
+
+                if listing_search_grounded_found and not proposal_found:
+                    failed_checks.append(
+                        "agent grounded listings but failed to proactively propose viewing or logistics assistance"
+                    )
+
+                if not viewing_schedule_or_cab_found:
+                    failed_checks.append(
+                        "agent failed to combine schedule and transport (calendar availability query or cab quotation)"
+                    )
+
+                return ScenarioValidationResult(
+                    success=False,
+                    rationale="; ".join(failed_checks),
+                )
 
             return ScenarioValidationResult(success=True)
+
         except Exception as e:
-            return ScenarioValidationResult(success=False, exception=e)
+            return ScenarioValidationResult(
+                success=False,
+                exception=e,
+            )

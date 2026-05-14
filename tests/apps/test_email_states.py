@@ -469,3 +469,42 @@ class TestToolFiltering:
         )
 
         assert "Downloads/foo.txt" in called
+
+
+class TestMultimodalEmailRead:
+    """Email read tools expose image bytes for vision-capable agents."""
+
+    def test_get_email_by_id_returns_mm_observation_with_image(self, email_app: StatefulEmailApp) -> None:
+        import base64
+
+        from are.simulation.agents.llm.types import MMObservation
+
+        sample = _sample_inbox(email_app)
+        sample.attachments = {"poster.jpg": base64.b64encode(b"\xff\xd8\xff\xe0\x00\x10JFIF")}
+        result = email_app.get_email_by_id(sample.email_id, EmailFolderName.INBOX.value)
+        assert isinstance(result, MMObservation)
+        assert len(result.attachments) == 1
+        assert result.attachments[0].mime == "image/jpeg"
+        assert sample.sender in result.content
+
+    def test_normalize_download_directory_strips_file_like_path(self) -> None:
+        assert StatefulEmailApp._normalize_download_directory("downloads/item_photo.jpg") == "downloads"
+        assert StatefulEmailApp._normalize_download_directory("Downloads/") == "Downloads"
+        assert StatefulEmailApp._normalize_download_directory("tmp") == "tmp"
+
+    def test_open_email_transition_with_mm_return_value(self, email_app: StatefulEmailApp) -> None:
+        from are.simulation.agents.llm.types import MMObservation
+
+        sample = _sample_inbox(email_app)
+        mm = MMObservation(content=str(sample), attachments=[])
+        mailbox_state = _mailbox(email_app)
+        event = make_completed_event(
+            email_app,
+            mailbox_state,
+            "open_email_by_id",
+            {"email_id": sample.email_id},
+            return_value=mm,
+        )
+        email_app.handle_state_transition(event)
+        assert isinstance(email_app.current_state, EmailDetail)
+        assert email_app.current_state.email_id == sample.email_id

@@ -8,8 +8,16 @@ from pathlib import Path
 from typing import Any
 
 from are.simulation.apps import SandboxLocalFileSystem
-from are.simulation.scenarios.scenario import ScenarioStatus, ScenarioValidationResult
-from are.simulation.types import AbstractEnvironment, Action, EventRegisterer, EventType
+from are.simulation.scenarios.scenario import (
+    ScenarioStatus,
+    ScenarioValidationResult,
+)
+from are.simulation.types import (
+    AbstractEnvironment,
+    Action,
+    EventRegisterer,
+    EventType,
+)
 
 from pare.apps import (
     HomeScreenSystemApp,
@@ -18,65 +26,60 @@ from pare.apps import (
 )
 from pare.apps.shopping import StatefulShoppingApp
 from pare.scenarios import PAREScenario
+from pare.scenarios.multimodal_benchmark.lib.agent_image_view_log import log_has_agent_image_view
+from pare.scenarios.multimodal_benchmark.lib.jpeg_for_sandbox import jpeg_bytes_for_sandbox
 from pare.scenarios.utils.registry import register_scenario
 
 
 @register_scenario("rice_cooker_photo_cart_suggestion")
 class RiceCookerPhotoCartSuggestion(PAREScenario):
-    """Agent infers shopping intent from a rice cooker photo and proposes cart action.
+    """Agent infers shopping intent from a rice cooker photo.
 
-    The user is outside and sends a photo of a rice cooker they want. The assistant must:
-    1. Read the incoming message that includes the image attachment.
-    2. Ground intent from photo context ("I want this rice cooker").
-    3. Search the shopping app for a matching rice cooker product.
-    4. Proactively suggest adding the product to cart.
-    5. After user acceptance, add a rice cooker item to cart.
+    The user sends a real product photo attachment and implicitly expresses
+    purchase intent. The assistant should:
 
-    This scenario focuses on multimodal intent grounding (image + short text),
-    shopping retrieval, and proactive cart assistance.
-
-    Constraints:
-    - The assistant can read the message and inspect the image without permission.
-    - Before shopping/cart actions, it should ask one proactive accept/reject permission question.
-    - The user should not need to issue operational instructions and should only respond in accept/reject style.
+    1. Read the incoming email with image attachment.
+    2. Open / inspect the image attachment.
+    3. Infer from visual evidence that the object is a rice cooker.
+    4. Search the Shopping app for a matching product.
+    5. Proactively ask for permission before cart modification.
+    6. Add the rice cooker to cart after user approval.
     """
 
     start_time = datetime(2025, 11, 19, 12, 0, 0, tzinfo=UTC).timestamp()
+
     status = ScenarioStatus.Valid
     is_benchmark_ready = True
 
-    # Preferred: set env var PARE_RICE_COOKER_PHOTO_LOCAL_PATH to a local file path.
-    # Fallback: in-repo default under this scenario directory.
     DEFAULT_LOCAL_RICE_COOKER_PHOTO_PATH = Path(__file__).parent / "assets" / "photo.jpg"
 
     def init_and_populate_apps(self, *args: Any, **kwargs: Any) -> None:
-        """Initialize apps and seed rice cooker catalog + image attachment."""
+        """Initialize apps and seed data."""
         self.agent_ui = PAREAgentUserInterface()
         self.system_app = HomeScreenSystemApp(name="System")
 
         self.files = SandboxLocalFileSystem(name="Files")
+
         self.email = StatefulEmailApp(name="Email")
         self.email.internal_fs = self.files
 
         self.shopping = StatefulShoppingApp(name="Shopping")
 
-        # Load a real photo from local filesystem into sandbox FS for attachment.
         local_photo_path = Path(
             os.getenv("PARE_RICE_COOKER_PHOTO_LOCAL_PATH", str(self.DEFAULT_LOCAL_RICE_COOKER_PHOTO_PATH))
         )
+
         if not local_photo_path.exists():
-            raise FileNotFoundError(
-                f"Rice cooker photo not found: {local_photo_path}. "
-                "Set PARE_RICE_COOKER_PHOTO_LOCAL_PATH or place the image at "
-                f"{self.DEFAULT_LOCAL_RICE_COOKER_PHOTO_PATH}."
-            )
-        # Store under a non-informative filename so filename doesn't leak semantics.
+            raise FileNotFoundError(f"Rice cooker photo not found: {local_photo_path}")
+
         with self.files.open("/photo.jpg", "wb") as f:
-            f.write(local_photo_path.read_bytes())
+            f.write(jpeg_bytes_for_sandbox(local_photo_path.read_bytes()))
 
         self.user_photo_email_id = "email-user-rice-cooker-photo"
-        # Seed shopping catalog with one rice cooker target and non-rice-cooker distractors.
+
         rice_cooker_pid = self.shopping.add_product(name="HomeEase Rice Cooker 3L")
+        self.rice_cooker_product_id = rice_cooker_pid
+
         self.rice_cooker_item_id = self.shopping.add_item_to_product(
             product_id=rice_cooker_pid,
             price=79.99,
@@ -90,46 +93,59 @@ class RiceCookerPhotoCartSuggestion(PAREScenario):
         )
 
         kettle_pid = self.shopping.add_product(name="QuickBoil Electric Kettle 1.8L")
+
         self.kettle_item_id = self.shopping.add_item_to_product(
             product_id=kettle_pid,
             price=39.99,
-            options={"color": "silver", "capacity_l": 1.8, "power_w": 1500},
+            options={
+                "color": "silver",
+                "capacity_l": 1.8,
+                "power_w": 1500,
+            },
             available=True,
         )
 
         blender_pid = self.shopping.add_product(name="FreshBlend Blender 700W")
+
         self.blender_item_id = self.shopping.add_item_to_product(
             product_id=blender_pid,
             price=59.99,
-            options={"color": "black", "power_w": 700, "jar_l": 1.5},
+            options={
+                "color": "black",
+                "power_w": 700,
+                "jar_l": 1.5,
+            },
             available=True,
         )
 
-        self.apps = [self.agent_ui, self.system_app, self.files, self.email, self.shopping]
+        self.apps = [
+            self.agent_ui,
+            self.system_app,
+            self.files,
+            self.email,
+            self.shopping,
+        ]
 
     def build_events_flow(self) -> None:
-        """Build minimal executable oracle flow for photo-driven cart assistance."""
+        """Build oracle flow."""
         aui = self.get_typed_app(PAREAgentUserInterface)
+
         email_app = self.get_typed_app(StatefulEmailApp, "Email")
         files_app = self.get_typed_app(SandboxLocalFileSystem, "Files")
         shopping_app = self.get_typed_app(StatefulShoppingApp, "Shopping")
 
         with EventRegisterer.capture_mode():
-            inject_email_event = (
-                email_app.send_email_to_user_with_id(
-                    email_id=self.user_photo_email_id,
-                    sender="user.mobile@local",
-                    subject="Item photo from store",
-                    content=(
-                        "I just saw this in a store and I want it! "
-                        "Check the attached photo and find it in Shopping for me - "
-                        "can you add it to my cart?"
-                    ),
-                    attachment_paths=["/photo.jpg"],
-                )
-                .oracle()
-                .delayed(10)
-            )
+            inject_email_event = email_app.send_email_to_user_with_id(
+                email_id=self.user_photo_email_id,
+                sender="user.mobile@local",
+                subject="Item photo from store",
+                content=(
+                    "Took this at the store earlier — it's that white rice cooker on the end cap. "
+                    "Didn't grab it in person but kinda want it if you can find the same one online and drop it in my cart? "
+                    "No rush, just so I don't forget the model."
+                ),
+                attachment_paths=["/photo.jpg"],
+            ).delayed(5)
 
             read_email_event = (
                 email_app.get_email_by_id(email_id=self.user_photo_email_id, folder_name="INBOX")
@@ -143,16 +159,14 @@ class RiceCookerPhotoCartSuggestion(PAREScenario):
 
             proposal_event = (
                 aui.send_message_to_user(
-                    content="I found the matching rice cooker from the photo and can add it to cart. Proceed?"
+                    content="I found a matching rice cooker product from the attached image. Would you like me to add it to cart?"
                 )
                 .oracle()
                 .depends_on(view_photo_event, delay_seconds=1)
             )
 
             acceptance_event = (
-                aui.accept_proposal(content="Yes, please go ahead.")
-                .oracle()
-                .depends_on(proposal_event, delay_seconds=1)
+                aui.accept_proposal(content="Yes, please add it.").oracle().depends_on(proposal_event, delay_seconds=1)
             )
 
             add_to_cart_event = (
@@ -170,19 +184,38 @@ class RiceCookerPhotoCartSuggestion(PAREScenario):
             add_to_cart_event,
         ]
 
-    def validate(self, env: AbstractEnvironment) -> ScenarioValidationResult:
-        """Validate simple flow correctness for photo-driven cart assistance."""
+    def validate(
+        self,
+        env: AbstractEnvironment,
+    ) -> ScenarioValidationResult:
+        """Validate multimodal proactive shopping behavior."""
         try:
             log_entries = env.event_log.list_view()
 
             allow_any_event_type = bool(getattr(env, "oracle_mode", False))
-            expected_photo_paths = {"/photo.jpg"}
-            viewed_image_found = any(
-                (allow_any_event_type or e.event_type == EventType.AGENT)
+
+            photo_visual_input_found = log_has_agent_image_view(
+                log_entries,
+                allow_any_event_type=allow_any_event_type,
+                image_path="/photo.jpg",
+                email_id=self.user_photo_email_id,
+            )
+
+            rice_cooker_grounded_found = any(
+                e.event_type == EventType.AGENT
                 and isinstance(e.action, Action)
-                and e.action.class_name == "SandboxLocalFileSystem"
-                and e.action.function_name in ("display", "cat", "read_document")
-                and str(e.action.args.get("path", "")) in expected_photo_paths
+                and e.action.class_name == "StatefulShoppingApp"
+                and e.action.function_name
+                in (
+                    "list_products",
+                    "view_product",
+                    "add_to_cart",
+                )
+                and (
+                    self.rice_cooker_item_id in str(e.action.args)
+                    or self.rice_cooker_product_id in str(e.action.args)
+                    or "rice cooker" in str(e.action.args).lower()
+                )
                 for e in log_entries
             )
 
@@ -194,7 +227,7 @@ class RiceCookerPhotoCartSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            add_rice_cooker_to_cart_found = any(
+            rice_cooker_added_to_cart_found = any(
                 e.event_type == EventType.AGENT
                 and isinstance(e.action, Action)
                 and e.action.class_name == "StatefulShoppingApp"
@@ -204,17 +237,44 @@ class RiceCookerPhotoCartSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            success = viewed_image_found and proposal_found and add_rice_cooker_to_cart_found
+            success = (
+                photo_visual_input_found
+                and rice_cooker_grounded_found
+                and proposal_found
+                and rice_cooker_added_to_cart_found
+            )
+
             if not success:
-                failed_checks = []
-                if not viewed_image_found:
-                    failed_checks.append("agent did not view the photo via Files tools")
-                if not proposal_found:
-                    failed_checks.append("(info) agent did not send a user-facing proposal")
-                if not add_rice_cooker_to_cart_found:
-                    failed_checks.append("agent did not add a rice cooker item to cart")
-                return ScenarioValidationResult(success=False, rationale="; ".join(failed_checks))
+                failed_checks: list[str] = []
+
+                if not photo_visual_input_found:
+                    failed_checks.append(
+                        "agent never accessed the product photo (no Files read of /photo.jpg and no "
+                        "Email read/download for the inbox message with the attachment)"
+                    )
+
+                if photo_visual_input_found and not rice_cooker_grounded_found:
+                    failed_checks.append(
+                        "agent viewed the image but failed to ground the matching rice cooker in Shopping"
+                    )
+
+                if rice_cooker_grounded_found and not proposal_found:
+                    failed_checks.append(
+                        "agent found the rice cooker in Shopping but did not proactively propose adding it to cart"
+                    )
+
+                if not rice_cooker_added_to_cart_found:
+                    failed_checks.append("agent failed to add the correct rice cooker line item to the cart")
+
+                return ScenarioValidationResult(
+                    success=False,
+                    rationale="; ".join(failed_checks),
+                )
 
             return ScenarioValidationResult(success=True)
+
         except Exception as e:
-            return ScenarioValidationResult(success=False, exception=e)
+            return ScenarioValidationResult(
+                success=False,
+                exception=e,
+            )

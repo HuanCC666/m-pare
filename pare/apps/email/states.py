@@ -106,14 +106,14 @@ class MailboxView(AppState):
     def open_email_by_id(self, email_id: str) -> Email:
         """Open a specific email by id within the current folder."""
         with disable_events():
-            return self.app.get_email_by_id(email_id=email_id, folder_name=self.folder)
+            return self.app.fetch_email_record(email_id=email_id, folder_name=self.folder)
 
     @user_tool()
     @pare_event_registered()
     def open_email_by_index(self, index: int) -> Email:
         """Open a specific email by index within the current folder."""
         with disable_events():
-            return self.app.get_email_by_index(idx=index, folder_name=self.folder)
+            return self.app.fetch_email_by_index(idx=index, folder_name=self.folder)
 
     @user_tool()
     @pare_event_registered()
@@ -142,7 +142,7 @@ class EmailDetail(AppState):
 
     def on_enter(self) -> None:
         """Attempt to refresh cached email details on entry."""
-        self._email = self.app.get_email_by_id(email_id=self.email_id, folder_name=self.folder_name)
+        self._email = self.app.fetch_email_record(email_id=self.email_id, folder_name=self.folder_name)
 
     def on_exit(self) -> None:
         """Clear cached email data when leaving the detail view."""
@@ -158,7 +158,7 @@ class EmailDetail(AppState):
     @pare_event_registered()
     def refresh(self) -> Email:
         """Fetch the latest version of the current email."""
-        self._email = self.app.get_email_by_id(email_id=self.email_id, folder_name=self.folder_name)
+        self._email = self.app.fetch_email_record(email_id=self.email_id, folder_name=self.folder_name)
         return self._email
 
     @user_tool()

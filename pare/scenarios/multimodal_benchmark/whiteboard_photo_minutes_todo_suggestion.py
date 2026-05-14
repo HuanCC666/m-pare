@@ -15,6 +15,8 @@ from pare.apps import HomeScreenSystemApp, PAREAgentUserInterface, StatefulEmail
 from pare.apps.note import StatefulNotesApp
 from pare.apps.reminder import StatefulReminderApp
 from pare.scenarios import PAREScenario
+from pare.scenarios.multimodal_benchmark.lib.agent_image_view_log import log_has_agent_image_view
+from pare.scenarios.multimodal_benchmark.lib.jpeg_for_sandbox import jpeg_bytes_for_sandbox
 from pare.scenarios.utils.registry import register_scenario
 
 
@@ -57,7 +59,7 @@ class WhiteboardPhotoMinutesTodoSuggestion(PAREScenario):
                 f"{self.DEFAULT_LOCAL_WHITEBOARD_PHOTO_PATH}."
             )
         with self.files.open("/meeting_whiteboard_photo.jpg", "wb") as f:
-            f.write(local_whiteboard_path.read_bytes())
+            f.write(jpeg_bytes_for_sandbox(local_whiteboard_path.read_bytes()))
 
         self.whiteboard_email_id = "meeting_whiteboard_email"
         base_day = datetime.fromtimestamp(self.start_time, tz=UTC)
@@ -86,17 +88,18 @@ class WhiteboardPhotoMinutesTodoSuggestion(PAREScenario):
         reminder_app = self.get_typed_app(StatefulReminderApp, "Reminders")
 
         with EventRegisterer.capture_mode():
-            inject_email_event = (
-                email_app.send_email_to_user_with_id(
-                    email_id=self.whiteboard_email_id,
-                    sender="teammate@company.com",
-                    subject="Whiteboard snapshot from today's planning",
-                    content="Sharing the whiteboard photo from the meeting for your reference.",
-                    attachment_paths=["/meeting_whiteboard_photo.jpg"],
-                )
-                .oracle()
-                .delayed(7)
-            )
+            inject_email_event = email_app.send_email_to_user_with_id(
+                email_id=self.whiteboard_email_id,
+                sender="teammate@company.com",
+                subject="Whiteboard snapshot from today's planning",
+                content=(
+                    "Hey — grabbed a photo of the board after we wrapped earlier. "
+                    "Can you turn the scribbles into something we can actually follow (who owns what / when)? "
+                    "A short write-up and a few reminders for the dates would help a lot. "
+                    "Pic attached, sorry if my handwriting is awful."
+                ),
+                attachment_paths=["/meeting_whiteboard_photo.jpg"],
+            ).delayed(7)
 
             read_email_event = (
                 email_app.get_email_by_id(email_id=self.whiteboard_email_id, folder_name="INBOX")
@@ -154,17 +157,51 @@ class WhiteboardPhotoMinutesTodoSuggestion(PAREScenario):
             create_reminder_event,
         ]
 
-    def validate(self, env: AbstractEnvironment) -> ScenarioValidationResult:
-        """Validate simple flow correctness for whiteboard follow-up."""
+    def validate(
+        self,
+        env: AbstractEnvironment,
+    ) -> ScenarioValidationResult:
+        """Validate whiteboard photo viewing, note/reminder grounding, proposal, and follow-up writes."""
         try:
             log_entries = env.event_log.list_view()
 
             allow_any_event_type = bool(getattr(env, "oracle_mode", False))
-            viewed_image_found = any(
-                (allow_any_event_type or e.event_type == EventType.AGENT)
+
+            photo_visual_input_found = log_has_agent_image_view(
+                log_entries,
+                allow_any_event_type=allow_any_event_type,
+                image_path="/meeting_whiteboard_photo.jpg",
+                email_id=self.whiteboard_email_id,
+            )
+
+            minutes_or_followups_grounded_found = any(
+                e.event_type == EventType.AGENT
                 and isinstance(e.action, Action)
-                and e.action.class_name == "SandboxLocalFileSystem"
-                and e.action.function_name in {"display", "cat", "read_document"}
+                and (
+                    (
+                        e.action.class_name == "StatefulNotesApp"
+                        and e.action.function_name == "create_note"
+                        and (
+                            "work" in str(e.action.args).lower()
+                            or "whiteboard" in str(e.action.args).lower()
+                            or "meeting" in str(e.action.args).lower()
+                            or "planning" in str(e.action.args).lower()
+                        )
+                    )
+                    or (
+                        e.action.class_name == "StatefulReminderApp"
+                        and e.action.function_name == "add_reminder"
+                        and bool(str(e.action.args.get("due_datetime", "")).strip())
+                    )
+                )
+                for e in log_entries
+            )
+
+            proposal_found = any(
+                e.event_type == EventType.AGENT
+                and isinstance(e.action, Action)
+                and e.action.class_name == "PAREAgentUserInterface"
+                and e.action.function_name == "send_message_to_user"
                 for e in log_entries
             )
 
@@ -176,14 +213,6 @@ class WhiteboardPhotoMinutesTodoSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            proactive_proposal_found = any(
-                e.event_type == EventType.AGENT
-                and isinstance(e.action, Action)
-                and e.action.class_name == "PAREAgentUserInterface"
-                and e.action.function_name == "send_message_to_user"
-                for e in log_entries
-            )
-
             reminders_created_found = any(
                 e.event_type == EventType.AGENT
                 and isinstance(e.action, Action)
@@ -192,19 +221,50 @@ class WhiteboardPhotoMinutesTodoSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            success = viewed_image_found and structured_note_found and proactive_proposal_found
+            note_and_reminder_writes_found = structured_note_found and reminders_created_found
+
+            success = (
+                photo_visual_input_found
+                and minutes_or_followups_grounded_found
+                and proposal_found
+                and note_and_reminder_writes_found
+            )
+
             if not success:
-                failed_checks = []
-                if not viewed_image_found:
-                    failed_checks.append("agent did not inspect whiteboard image")
-                if not structured_note_found:
-                    failed_checks.append("agent did not create structured notes from action items")
-                if not proactive_proposal_found:
-                    failed_checks.append("agent did not proactively suggest reminder creation")
-                if not reminders_created_found:
-                    failed_checks.append("(info) agent did not create reminders")
-                return ScenarioValidationResult(success=False, rationale="; ".join(failed_checks))
+                failed_checks: list[str] = []
+
+                #
+                # Failure analysis
+                #
+
+                if not photo_visual_input_found:
+                    failed_checks.append(
+                        "agent never accessed the meeting whiteboard photo (no Files read of "
+                        "/meeting_whiteboard_photo.jpg and no Email read/download for the inbox message "
+                        "with the attachment)"
+                    )
+
+                if photo_visual_input_found and not minutes_or_followups_grounded_found:
+                    failed_checks.append(
+                        "agent viewed the whiteboard but failed to ground meeting notes or dated follow-up reminders"
+                    )
+
+                if minutes_or_followups_grounded_found and not proposal_found:
+                    failed_checks.append(
+                        "agent drafted notes or reminders but failed to proactively propose creating them for the user"
+                    )
+
+                if not note_and_reminder_writes_found:
+                    failed_checks.append(
+                        "agent did not complete both required writes: structured meeting note and at least one reminder"
+                    )
+
+                return ScenarioValidationResult(
+                    success=False,
+                    rationale="; ".join(failed_checks),
+                )
 
             return ScenarioValidationResult(success=True)
+
         except Exception as e:
             return ScenarioValidationResult(success=False, exception=e)

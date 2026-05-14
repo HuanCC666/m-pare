@@ -33,6 +33,7 @@ uv run pare scenarios generate --apps StatefulEmailApp --apps StatefulCalendarAp
 - [Stateful Reminder App](./reminder.md)
 - [Stateful Shopping App](./shopping.md)
 - [Stateful Note App](./notes.md)
+- [Stateful Album App](./album.md)
 
 ## Navigation Framework Recap
 - Every stateful app inherits from `pare.apps.core.StatefulApp`, which binds a navigation state (`AppState`) before surfacing its tools.
