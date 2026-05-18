@@ -2,18 +2,52 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import os
+from typing import Any
 
+from are.simulation.agents.llm.types import MMObservation
+from are.simulation.agents.multimodal import Attachment
 from are.simulation.apps.email_client import Email, EmailClientV2, EmailFolderName
-from are.simulation.tool_utils import OperationType, env_tool
-from are.simulation.types import EventType, disable_events, event_registered
-from are.simulation.utils import uuid_hex
+from are.simulation.tool_utils import OperationType, app_tool, env_tool
+from are.simulation.types import CompletedEvent, EventType, disable_events, event_registered
+from are.simulation.utils import type_check, uuid_hex
 
 from pare.apps.core import StatefulApp
 from pare.apps.email.states import ComposeDraft, ComposeEmail, EmailDetail, MailboxView
 
-if TYPE_CHECKING:
-    from are.simulation.types import CompletedEvent
+# When the model passes a *file* path as ``path_to_save``, Meta-ARE joins ``(path, attachment_name)``
+# and tries to open a nested path like ``downloads/foo.jpg/bar.png`` which fails. Treat those as
+# the parent directory instead.
+_DOWNLOAD_FILE_EXTENSIONS: frozenset[str] = frozenset({
+    "jpg",
+    "jpeg",
+    "png",
+    "gif",
+    "webp",
+    "heic",
+    "bmp",
+    "pdf",
+    "txt",
+    "md",
+    "doc",
+    "docx",
+    "xlsx",
+    "pptx",
+    "csv",
+    "zip",
+})
+
+_IMAGE_ATTACHMENT_EXTENSIONS: frozenset[str] = frozenset({"jpg", "jpeg", "png", "gif", "webp", "heic", "bmp"})
+
+_MIME_BY_IMAGE_EXT: dict[str, str] = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "gif": "image/gif",
+    "webp": "image/webp",
+    "heic": "image/heic",
+    "bmp": "image/bmp",
+}
 
 
 class StatefulEmailApp(StatefulApp, EmailClientV2):
@@ -94,12 +128,69 @@ class StatefulEmailApp(StatefulApp, EmailClientV2):
         return default_folder
 
     @staticmethod
+    def _mime_for_image_attachment(filename: str) -> str | None:
+        if "." not in filename:
+            return None
+        ext = filename.rsplit(".", 1)[-1].lower()
+        if ext not in _IMAGE_ATTACHMENT_EXTENSIONS:
+            return None
+        return _MIME_BY_IMAGE_EXT.get(ext)
+
+    def _email_to_mm_observation(self, email: Email) -> MMObservation:
+        """Return email text plus raster attachments so vision models can read images."""
+        attachments: list[Attachment] = []
+        if email.attachments:
+            for fname, b64_bytes in email.attachments.items():
+                mime = self._mime_for_image_attachment(fname)
+                if mime and b64_bytes:
+                    attachments.append(Attachment(base64_data=b64_bytes, mime=mime, name=fname))
+        return MMObservation(content=str(email), attachments=attachments)
+
+    @staticmethod
+    def _normalize_download_directory(path_to_save: str) -> str:
+        p = (path_to_save or "Downloads/").strip().replace("\\", "/")
+        if not p:
+            return "Downloads"
+        p = p.rstrip("/")
+        if not p:
+            return "Downloads"
+        bn = os.path.basename(p)
+        if "." in bn:
+            ext = bn.rsplit(".", 1)[-1].lower()
+            if ext in _DOWNLOAD_FILE_EXTENSIONS:
+                parent = os.path.dirname(p)
+                return parent if parent else "."
+        return p
+
+    @staticmethod
     def _email_id_from_event(event: CompletedEvent) -> str | None:
         metadata_value = event.metadata.return_value if event.metadata else None
         if isinstance(metadata_value, Email):
             return metadata_value.email_id
         if isinstance(metadata_value, dict):
             return metadata_value.get("email_id")
+        if isinstance(metadata_value, MMObservation):
+            action = event.action
+            if action is None:
+                return None
+            args = action.resolved_args or action.args
+            if not isinstance(args, dict):
+                return None
+            args_ns = {k: v for k, v in args.items() if k != "self"}
+            eid = args_ns.get("email_id")
+            if isinstance(eid, str):
+                return eid
+            idx = args_ns.get("idx")
+            if idx is None:
+                idx = args_ns.get("index")
+            folder_raw = args_ns.get("folder_name", EmailFolderName.INBOX.value)
+            app = action.app
+            if isinstance(idx, int) and app is not None:
+                try:
+                    resolved = EmailClientV2.get_email_by_index(app, idx, folder_raw)
+                except (ValueError, KeyError, TypeError):
+                    return None
+                return resolved.email_id
         return None
 
     @staticmethod
@@ -251,6 +342,45 @@ class StatefulEmailApp(StatefulApp, EmailClientV2):
 
         self.folders[EmailFolderName.INBOX].add_email(email)
         return email_id
+
+    def fetch_email_record(self, email_id: str, folder_name: str = EmailFolderName.INBOX.value) -> Email:
+        """Return the underlying :class:`Email` object (for navigation / compose, not for LLM tool output)."""
+        return EmailClientV2.get_email_by_id(self, email_id, folder_name)
+
+    def fetch_email_by_index(self, idx: int, folder_name: str = EmailFolderName.INBOX.value) -> Email:
+        """Return the underlying :class:`Email` by list index (for navigation, not for LLM tool output)."""
+        return EmailClientV2.get_email_by_index(self, idx, folder_name)
+
+    @type_check
+    @app_tool()
+    @event_registered(operation_type=OperationType.READ)
+    def get_email_by_id(self, email_id: str, folder_name: str = EmailFolderName.INBOX.value) -> MMObservation:
+        """Read an email and expose image attachments to multimodal agents."""
+        email = EmailClientV2.get_email_by_id(self, email_id, folder_name)
+        return self._email_to_mm_observation(email)
+
+    @type_check
+    @app_tool()
+    @event_registered(operation_type=OperationType.READ)
+    def get_email_by_index(self, idx: int, folder_name: str = EmailFolderName.INBOX.value) -> MMObservation:
+        """Read an email by index and expose image attachments to multimodal agents."""
+        email = EmailClientV2.get_email_by_index(self, idx, folder_name)
+        return self._email_to_mm_observation(email)
+
+    @type_check
+    @app_tool()
+    @event_registered(operation_type=OperationType.WRITE)
+    def download_attachments(
+        self,
+        email_id: str,
+        folder_name: str = EmailFolderName.INBOX.value,
+        path_to_save: str = "Downloads/",
+    ) -> list[str]:
+        """Download attachments, normalizing ``path_to_save`` to a directory when it looks like a file path."""
+        target_dir = self._normalize_download_directory(path_to_save)
+        if self.internal_fs is not None:
+            self.internal_fs.makedirs(target_dir, exist_ok=True)
+        return EmailClientV2.download_attachments(self, email_id, folder_name, target_dir)
 
     def create_root_state(self) -> MailboxView:
         """Return the mailbox view rooted in the inbox."""

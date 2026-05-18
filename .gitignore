@@ -235,3 +235,5 @@ data/annotations/
 
 # Git worktrees
 .worktrees/
+
+pare/scenarios/multimodal_benchmark/assets

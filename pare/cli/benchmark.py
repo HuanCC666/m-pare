@@ -60,6 +60,8 @@ app = typer.Typer(
     help="Run PARE benchmark experiments",
 )
 
+DEFAULT_TRACE_OUTPUT_DIR = Path(__file__).resolve().parents[3] / "result"
+
 
 def parse_scenarios_arg(scenarios_arg: str) -> list[str]:
     """Parse scenarios argument which can be a single ID, comma-separated IDs, or a file path.
@@ -403,9 +405,11 @@ def run(
         typer.Option("--results-dir", help="Directory for JSON result files"),
     ] = Path("results"),
     output_dir: Annotated[
+
         Path | None,
         typer.Option("--output-dir", help="Directory for trace exports"),
     ] = None,
+
     export: Annotated[
         bool,
         typer.Option("--export/--no-export", help="Export scenario traces"),

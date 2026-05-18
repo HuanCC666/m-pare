@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from are.simulation.apps import App
 
+from pare.apps.album import StatefulAlbumApp
 from pare.apps.apartment import StatefulApartmentApp
 from pare.apps.cab import StatefulCabApp
 from pare.apps.calendar.app import StatefulCalendarApp
@@ -23,6 +24,7 @@ __all__ = [
     "AppState",
     "HomeScreenSystemApp",
     "PAREAgentUserInterface",
+    "StatefulAlbumApp",
     "StatefulApartmentApp",
     "StatefulApp",
     "StatefulCabApp",
@@ -48,4 +50,5 @@ ALL_APPS = [
     StatefulMessagingApp,
     StatefulNotesApp,
     StatefulReminderApp,
+    StatefulAlbumApp,
 ]
