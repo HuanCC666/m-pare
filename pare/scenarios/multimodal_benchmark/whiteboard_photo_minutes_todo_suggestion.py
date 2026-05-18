@@ -35,7 +35,9 @@ class WhiteboardPhotoMinutesTodoSuggestion(PAREScenario):
     status = ScenarioStatus.Valid
     is_benchmark_ready = True
 
-    DEFAULT_LOCAL_WHITEBOARD_PHOTO_PATH = Path(__file__).parent / "assets" / "meeting_whiteboard_photo.jpg"
+    DEFAULT_LOCAL_WHITEBOARD_PHOTO_PATH = (
+        Path(__file__).parent / "assets" / "whiteboard_photo_minutes_todo_suggestion" / "meeting_whiteboard_photo.jpg"
+    )
 
     def init_and_populate_apps(self, *args: Any, **kwargs: Any) -> None:
         """Initialize apps and seed the whiteboard email, note, and reminder fixtures."""

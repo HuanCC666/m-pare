@@ -7,9 +7,10 @@ Design note (token efficiency):
   taken_at, mime_type, width, height, ...). Searching this metadata is cheap and
   does not require loading image bytes.
 - The actual image content lives in the connected filesystem at ``file_path``.
-  Agents should only call ``view_photo`` / filesystem ``display`` when visual
-  confirmation is required, *after* narrowing the candidate set via metadata
-  search. This keeps multimodal token usage low.
+  Agents should only call ``view_photo`` when visual confirmation is required,
+  *after* narrowing the candidate set via metadata search. ``view_photo`` returns
+  an ``MMObservation`` with image bytes for the model. This keeps multimodal
+  token usage low.
 """
 
 from __future__ import annotations

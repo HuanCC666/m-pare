@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import base64
 import logging
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from are.simulation.agents.llm.types import MMObservation
+from are.simulation.agents.multimodal import Attachment
 from are.simulation.apps.app import Protocol
 from are.simulation.tool_utils import OperationType, app_tool, data_tool, env_tool
 from are.simulation.types import EventType, disable_events
@@ -23,6 +26,18 @@ from pare.apps.core import StatefulApp
 from pare.apps.tool_decorators import pare_event_registered
 
 logger = logging.getLogger(__name__)
+
+_IMAGE_EXTENSIONS: frozenset[str] = frozenset({"jpg", "jpeg", "png", "gif", "webp", "heic", "bmp"})
+
+_MIME_BY_IMAGE_EXT: dict[str, str] = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "gif": "image/gif",
+    "webp": "image/webp",
+    "heic": "image/heic",
+    "bmp": "image/bmp",
+}
 
 
 class PhotosFolder:
@@ -177,8 +192,8 @@ class StatefulAlbumApp(StatefulApp):
     - Folder Management: create/delete/rename user folders.
     - Text Search: search by caption / description / tags / location / file name
       without loading image bytes.
-    - On-demand Viewing: ``view_photo`` loads the actual image via the filesystem
-      app for multimodal inspection.
+    - On-demand Viewing: ``view_photo`` returns an ``MMObservation`` with image
+      bytes so vision-capable agents can inspect photos.
     - State Management: save and load application state.
 
     Notes:
@@ -268,6 +283,53 @@ class StatefulAlbumApp(StatefulApp):
             if p is not None:
                 return (f.folder_name, p)
         return None
+
+    @staticmethod
+    def _parse_album_datetime(value: str) -> float:
+        """Parse ``YYYY-MM-DD`` or ``YYYY-MM-DD HH:MM:SS`` (UTC) to a timestamp."""
+        value = value.strip()
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(value, fmt).replace(tzinfo=UTC).timestamp()
+            except ValueError:
+                continue
+        raise ValueError(f"Invalid album datetime: {value!r}. Use YYYY-MM-DD or YYYY-MM-DD HH:MM:SS.")
+
+    @classmethod
+    def _resolve_taken_window(
+        cls,
+        *,
+        min_date: str | None,
+        max_date: str | None,
+        taken_on: str | None,
+    ) -> tuple[float, float]:
+        """Return ``[min_ts, max_ts)`` for filtering by ``Photo.taken_at``."""
+        if taken_on is not None:
+            day_start = cls._parse_album_datetime(taken_on)
+            return day_start, day_start + 86400
+        min_ts = float("-inf")
+        max_ts = float("inf")
+        if min_date is not None:
+            min_ts = cls._parse_album_datetime(min_date)
+        if max_date is not None:
+            max_ts = cls._parse_album_datetime(max_date)
+            if len(max_date.strip()) == 10:
+                max_ts += 86400
+        return min_ts, max_ts
+
+    @staticmethod
+    def _filter_photos_by_taken(photos: list[Photo], min_ts: float, max_ts: float) -> list[Photo]:
+        """Keep photos whose ``taken_at`` lies in ``[min_ts, max_ts)``."""
+        return [p for p in photos if min_ts <= p.taken_at < max_ts]
+
+    def _ordered_photos_for_folder(self, folder: str) -> list[Photo]:
+        """All photos in a folder (or smart-folder view), newest ``taken_at`` first."""
+        if folder not in self.folders:
+            raise ValueError(f"Folder {folder} not found")
+        f = self.folders[folder]
+        if f.kind == FolderKind.SMART:
+            return sorted(self._smart_members(folder), key=lambda p: p.taken_at, reverse=True)
+        return sorted(f.photos.values(), key=lambda p: p.taken_at, reverse=True)
 
     def _smart_members(self, smart_name: str) -> list[Photo]:
         """Compute the dynamic members of a smart folder from metadata."""
@@ -633,36 +695,54 @@ class StatefulAlbumApp(StatefulApp):
     @type_check
     @app_tool()
     @pare_event_registered(operation_type=OperationType.READ, event_type=EventType.AGENT)
-    def list_photos(self, folder: str, offset: int = 0, limit: int = 10) -> ReturnedPhotos:
+    def list_photos(
+        self,
+        folder: str,
+        offset: int = 0,
+        limit: int = 10,
+        min_date: str | None = None,
+        max_date: str | None = None,
+        taken_on: str | None = None,
+    ) -> ReturnedPhotos:
         """List photos in a folder (paginated, newest-taken first).
 
-        Smart folders are computed on the fly from photo metadata.
+        Smart folders are computed on the fly from photo metadata. Optional date
+        filters apply to ``Photo.taken_at`` (UTC). Use ``taken_on`` (``YYYY-MM-DD``)
+        to list every photo captured on that calendar day.
 
         Args:
             folder (str): Folder to list.
             offset (int): Starting index.
             limit (int): Maximum number to return.
+            min_date (str | None): Inclusive lower bound (date or datetime string).
+            max_date (str | None): Exclusive upper bound; date-only values include
+                the full calendar day.
+            taken_on (str | None): Shorthand for a single UTC calendar day
+                (``YYYY-MM-DD``).
 
         Returns:
             ReturnedPhotos: Paginated result.
 
         Raises:
-            ValueError: If folder not found.
+            ValueError: If folder not found or date strings are invalid.
         """
-        if folder not in self.folders:
-            raise ValueError(f"Folder {folder} not found")
-        f = self.folders[folder]
-        if f.kind == FolderKind.SMART:
-            ordered = sorted(self._smart_members(folder), key=lambda p: p.taken_at, reverse=True)
-            total = len(ordered)
-            end = min(offset + limit, total)
-            return ReturnedPhotos(
-                photos=ordered[offset:end],
-                photos_range=(offset, end),
-                total_returned_photos=len(ordered[offset:end]),
-                total_photos=total,
-            )
-        return f.get_photos(offset, limit)
+        if offset < 0:
+            raise ValueError("Offset must be non-negative.")
+        ordered = self._ordered_photos_for_folder(folder)
+        if taken_on is not None or min_date is not None or max_date is not None:
+            min_ts, max_ts = self._resolve_taken_window(min_date=min_date, max_date=max_date, taken_on=taken_on)
+            ordered = self._filter_photos_by_taken(ordered, min_ts, max_ts)
+        total = len(ordered)
+        if offset > total:
+            raise ValueError("Offset is larger than the number of photos")
+        end = min(offset + limit, total)
+        page = ordered[offset:end]
+        return ReturnedPhotos(
+            photos=page,
+            photos_range=(offset, end),
+            total_returned_photos=len(page),
+            total_photos=total,
+        )
 
     @type_check
     @app_tool()
@@ -875,36 +955,60 @@ class StatefulAlbumApp(StatefulApp):
                     results.append(p)
         return results
 
+    @staticmethod
+    def _mime_for_image_path(file_path: str, mime_type: str | None = None) -> str | None:
+        ext_mime: str | None = None
+        if "." in file_path:
+            ext = file_path.rsplit(".", 1)[-1].lower()
+            if ext in _IMAGE_EXTENSIONS:
+                ext_mime = _MIME_BY_IMAGE_EXT.get(ext)
+        if ext_mime:
+            return ext_mime
+        if mime_type and mime_type.lower().startswith("image/"):
+            return mime_type.lower()
+        return None
+
+    def _photo_to_mm_observation(self, photo: Photo) -> MMObservation:
+        """Return photo metadata text plus raster bytes for vision models."""
+        if self.internal_fs is None:
+            raise RuntimeError("No filesystem connected; cannot view photo.")
+        mime = self._mime_for_image_path(photo.file_path, photo.mime_type)
+        if mime is None:
+            raise ValueError(f"Photo is not a supported raster image: {photo.file_path}")
+        if not self.internal_fs.exists(photo.file_path):
+            raise ValueError(f"Image file does not exist: {photo.file_path}")
+        with disable_events(), self.internal_fs.open(photo.file_path, "rb") as f:
+            image_b64 = base64.b64encode(f.read())
+        if not image_b64:
+            raise ValueError(f"Image file is empty: {photo.file_path}")
+        attachment = Attachment(base64_data=image_b64, mime=mime, name=photo.file_name)
+        return MMObservation(content=str(photo).strip(), attachments=[attachment])
+
     @type_check
     @app_tool()
     @pare_event_registered(operation_type=OperationType.READ, event_type=EventType.AGENT)
-    def view_photo(self, photo_id: str) -> str:
-        """Load and display the actual image bytes for ``photo_id``.
+    def view_photo(self, photo_id: str) -> MMObservation:
+        """Load the actual image bytes for ``photo_id`` into the agent context.
 
         Use this only AFTER ``search_photos`` (or similar) has narrowed the
-        candidates -- this is the expensive multimodal operation that surfaces
-        the image into the agent's context via the connected filesystem app.
+        candidates -- this is the expensive multimodal operation.
 
         Args:
             photo_id (str): Photo ID to view.
 
         Returns:
-            str: The file path that was displayed (the filesystem app emits
-                 the actual image content as a separate event).
+            MMObservation: Photo metadata text plus an image attachment for the model.
 
         Raises:
             KeyError: If photo not found.
             RuntimeError: If no filesystem is connected.
+            ValueError: If the file is missing or not a supported image type.
         """
         result = self._get_photo_from_any_folder(photo_id)
         if result is None:
             raise KeyError(f"Photo {photo_id} not found")
         _, photo = result
-        if self.internal_fs is None:
-            raise RuntimeError("No filesystem connected; cannot view photo.")
-        with disable_events():
-            self.internal_fs.display(photo.file_path)
-        return photo.file_path
+        return self._photo_to_mm_observation(photo)
 
     def _resolve_photo_id(self, args: dict[str, Any], metadata: object | None) -> str | None:
         """Extract photo_id from args or metadata (mirror of note app helper)."""

@@ -38,6 +38,8 @@ class BillScreenshotPaymentReminderSuggestion(PAREScenario):
     - Image reading/browsing can happen before permission.
     - Do not ask for extra details.
     - User responses should stay in accept/reject style.
+    - Reminder due_datetime may be any moment from scenario start through end of the bill due day (UTC),
+      so advance reminders are valid.
     """
 
     start_time = datetime(2025, 11, 20, 19, 0, 0, tzinfo=UTC).timestamp()
@@ -45,7 +47,9 @@ class BillScreenshotPaymentReminderSuggestion(PAREScenario):
     status = ScenarioStatus.Valid
     is_benchmark_ready = True
 
-    DEFAULT_LOCAL_BILL_IMAGE_PATH = Path(__file__).parent / "assets" / "utility_bill_screenshot.jpg"
+    DEFAULT_LOCAL_BILL_IMAGE_PATH = (
+        Path(__file__).parent / "assets" / "bill_screenshot_payment_reminder_suggestion" / "utility_bill_screenshot.jpg"
+    )
 
     def init_and_populate_apps(self, *args: Any, **kwargs: Any) -> None:
         """Initialize apps and seed the bill screenshot + email/reminder fixtures."""
@@ -146,6 +150,26 @@ class BillScreenshotPaymentReminderSuggestion(PAREScenario):
             create_reminder_event,
         ]
 
+    @staticmethod
+    def _parse_reminder_due_utc(due_str: str) -> datetime | None:
+        raw = str(due_str).strip()
+        if not raw:
+            return None
+        try:
+            return datetime.strptime(raw, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
+        except ValueError:
+            return None
+
+    def _reminder_due_datetime_acceptable(self, due_str: str) -> bool:
+        """Bill due is start_time + 8 days; allow any reminder from scenario now through end of that day (UTC)."""
+        dt = self._parse_reminder_due_utc(due_str)
+        if dt is None:
+            return False
+        scenario_now = datetime.fromtimestamp(self.start_time, tz=UTC)
+        due_day_anchor = scenario_now + timedelta(days=8)
+        due_day_end = due_day_anchor.replace(hour=23, minute=59, second=59, microsecond=0)
+        return scenario_now <= dt <= due_day_end
+
     def validate(
         self,
         env: AbstractEnvironment,
@@ -180,17 +204,20 @@ class BillScreenshotPaymentReminderSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            reminder_expected_due_found = any(
+            reminder_due_acceptable_found = any(
                 e.event_type == EventType.AGENT
                 and isinstance(e.action, Action)
                 and e.action.class_name == "StatefulReminderApp"
                 and e.action.function_name == "add_reminder"
-                and str(e.action.args.get("due_datetime", "")).strip() == self.reminder_due_datetime
+                and self._reminder_due_datetime_acceptable(str(e.action.args.get("due_datetime", "")))
                 for e in log_entries
             )
 
             success = (
-                photo_visual_input_found and reminder_with_due_found and proposal_found and reminder_expected_due_found
+                photo_visual_input_found
+                and reminder_with_due_found
+                and proposal_found
+                and reminder_due_acceptable_found
             )
 
             if not success:
@@ -216,8 +243,11 @@ class BillScreenshotPaymentReminderSuggestion(PAREScenario):
                         "agent created a reminder signal but did not proactively propose assistance to the user"
                     )
 
-                if not reminder_expected_due_found:
-                    failed_checks.append("agent did not create the reminder with the expected due datetime")
+                if not reminder_due_acceptable_found:
+                    failed_checks.append(
+                        "agent did not create the reminder with a due datetime between scenario start and "
+                        "end of the bill due day (UTC), using YYYY-MM-DD HH:MM:SS"
+                    )
 
                 return ScenarioValidationResult(
                     success=False,

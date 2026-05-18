@@ -40,7 +40,9 @@ class RentalPosterViewingPlanSuggestion(PAREScenario):
     status = ScenarioStatus.Valid
     is_benchmark_ready = True
 
-    DEFAULT_LOCAL_POSTER_PATH = Path(__file__).parent / "assets" / "rental_poster_photo.jpg"
+    DEFAULT_LOCAL_POSTER_PATH = (
+        Path(__file__).parent / "assets" / "rental_poster_viewing_plan_suggestion" / "rental_poster_photo.jpg"
+    )
 
     def init_and_populate_apps(self, *args: Any, **kwargs: Any) -> None:
         """Initialize apps and seed the rental poster, listings, and calendar fixtures."""

@@ -51,7 +51,9 @@ class RiceCookerPhotoCartSuggestion(PAREScenario):
     status = ScenarioStatus.Valid
     is_benchmark_ready = True
 
-    DEFAULT_LOCAL_RICE_COOKER_PHOTO_PATH = Path(__file__).parent / "assets" / "photo.jpg"
+    DEFAULT_LOCAL_RICE_COOKER_PHOTO_PATH = (
+        Path(__file__).parent / "assets" / "rice_cooker_photo_cart_suggestion" / "photo.jpg"
+    )
 
     def init_and_populate_apps(self, *args: Any, **kwargs: Any) -> None:
         """Initialize apps and seed data."""

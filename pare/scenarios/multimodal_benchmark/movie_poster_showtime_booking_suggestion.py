@@ -47,7 +47,9 @@ class MoviePosterShowtimeBookingSuggestion(PAREScenario):
     status = ScenarioStatus.Valid
     is_benchmark_ready = True
 
-    DEFAULT_LOCAL_POSTER_PATH = Path(__file__).parent / "assets" / "movie_teaser_poster.jpg"
+    DEFAULT_LOCAL_POSTER_PATH = (
+        Path(__file__).parent / "assets" / "movie_poster_showtime_booking_suggestion" / "movie_teaser_poster.jpg"
+    )
 
     def init_and_populate_apps(self, *args: Any, **kwargs: Any) -> None:
         """Initialize apps and seed movie-ticket + schedule state."""
@@ -128,7 +130,7 @@ class MoviePosterShowtimeBookingSuggestion(PAREScenario):
                 content=(
                     "Hey — random idea for tonight. I'm free after like 8:15ish (once I'm done with stuff).\n\n"
                     "The Summer 2026 teaser art is in the attached poster — I don't have the listing link handy. "
-                    "If you can spot The Odyssey (2026) at Downtown Cinema with a late-ish show after dinner, that would work. "
+                    "If you can spot this movie at Downtown Cinema with a late-ish show after dinner, that would work. "
                     "Grab us 2 tickets? I'll Venmo you."
                 ),
                 attachment_paths=["/movie_teaser_poster.jpg"],

@@ -156,6 +156,14 @@ def test_go_back_from_folder_list(album_app: StatefulAlbumApp) -> None:
     assert len(album_app.navigation_stack) == 0
 
 
+def test_list_photos_filters_by_taken_on(album_app: StatefulAlbumApp) -> None:
+    _seed_photo(album_app, file_path="/sandbox/today.jpg", taken_at="2025-11-22 14:00:00")
+    _seed_photo(album_app, file_path="/sandbox/yesterday.jpg", taken_at="2025-11-21 09:00:00")
+    result = album_app.list_photos("Camera Roll", offset=0, limit=10, taken_on="2025-11-22")
+    assert result.total_photos == 1
+    assert result.photos[0].file_path == "/sandbox/today.jpg"
+
+
 def test_list_photos_pagination(album_app: StatefulAlbumApp) -> None:
     for i in range(12):
         _seed_photo(
@@ -400,3 +408,66 @@ def test_list_folders_includes_kinds(album_app: StatefulAlbumApp) -> None:
     kinds = {i.name: i.kind for i in infos}
     assert kinds["Camera Roll"] == FolderKind.SYSTEM
     assert kinds["Favorites"] == FolderKind.SMART
+
+
+class TestMultimodalAlbumView:
+    """view_photo exposes image bytes for vision-capable agents."""
+
+    def test_view_photo_returns_mm_observation_with_image(self) -> None:
+        import base64
+
+        from are.simulation.agents.llm.types import MMObservation
+        from are.simulation.apps import SandboxLocalFileSystem
+
+        fs = SandboxLocalFileSystem(name="Files")
+        album = StatefulAlbumApp(name="album")
+        album.internal_fs = fs
+        fs.mkdir("/sandbox", create_parents=True)
+        path = "/sandbox/bird.jpg"
+        with fs.open(path, "wb") as f:
+            f.write(base64.b64decode("/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAb/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="))
+
+        pid = album.add_photo_with_time(
+            folder="Camera Roll",
+            file_path=path,
+            caption="Sparrow",
+            taken_at="2025-11-22 14:00:00",
+        )
+        result = album.view_photo(pid)
+        assert isinstance(result, MMObservation)
+        assert len(result.attachments) == 1
+        assert result.attachments[0].mime == "image/jpeg"
+        assert result.attachments[0].name == "bird.jpg"
+        assert "Sparrow" in result.content
+        assert path in result.content
+
+    def test_view_photo_requires_filesystem(self, album_app: StatefulAlbumApp) -> None:
+        pid = _seed_photo(album_app, file_path="/sandbox/missing.jpg")
+        with pytest.raises(RuntimeError, match="No filesystem connected"):
+            album_app.view_photo(pid)
+
+    def test_photo_detail_view_returns_mm_observation(self) -> None:
+        import base64
+
+        from are.simulation.agents.llm.types import MMObservation
+        from are.simulation.apps import SandboxLocalFileSystem
+
+        fs = SandboxLocalFileSystem(name="Files")
+        album = StatefulAlbumApp(name="album")
+        album.internal_fs = fs
+        fs.mkdir("/sandbox", create_parents=True)
+        path = "/sandbox/hawk.png"
+        png_bytes = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )
+        with fs.open(path, "wb") as f:
+            f.write(png_bytes)
+        pid = album.add_photo_with_time(
+            folder="Camera Roll",
+            file_path=path,
+            taken_at="2025-11-22 15:00:00",
+        )
+        album.set_current_state(PhotoDetail(pid))
+        result = _photo_detail_state(album).view()
+        assert isinstance(result, MMObservation)
+        assert result.attachments[0].mime == "image/png"

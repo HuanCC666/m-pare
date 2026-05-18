@@ -8,6 +8,8 @@ from pare.apps.core import AppState
 from pare.apps.tool_decorators import pare_event_registered, user_tool
 
 if TYPE_CHECKING:
+    from are.simulation.agents.llm.types import MMObservation
+
     from pare.apps.album.app import StatefulAlbumApp
     from pare.apps.album.types import FolderInfo, Photo, ReturnedPhotos
 
@@ -45,18 +47,35 @@ class PhotoList(AppState):
 
     @user_tool()
     @pare_event_registered(operation_type=OperationType.READ)
-    def list_photos(self, offset: int = 0, limit: int = 10) -> ReturnedPhotos:
+    def list_photos(
+        self,
+        offset: int = 0,
+        limit: int = 10,
+        min_date: str | None = None,
+        max_date: str | None = None,
+        taken_on: str | None = None,
+    ) -> ReturnedPhotos:
         """Return paginated photos in the current folder.
 
         Args:
             offset (int): Starting index for pagination.
             limit (int): Maximum number of photos to return.
+            min_date (str | None): Inclusive lower bound on capture time (UTC).
+            max_date (str | None): Exclusive upper bound on capture time (UTC).
+            taken_on (str | None): Filter to a single calendar day (``YYYY-MM-DD``).
 
         Returns:
             ReturnedPhotos: Paginated photos container.
         """
         with disable_events():
-            return cast("StatefulAlbumApp", self.app).list_photos(self.folder, offset, limit)
+            return cast("StatefulAlbumApp", self.app).list_photos(
+                self.folder,
+                offset,
+                limit,
+                min_date=min_date,
+                max_date=max_date,
+                taken_on=taken_on,
+            )
 
     @user_tool()
     @pare_event_registered(operation_type=OperationType.READ)
@@ -164,14 +183,14 @@ class PhotoDetail(AppState):
 
     @user_tool()
     @pare_event_registered(operation_type=OperationType.READ)
-    def view(self) -> str:
+    def view(self) -> MMObservation:
         """Display the actual image bytes for this photo.
 
         Only call this when visual inspection is required -- it is the
         expensive multimodal operation.
 
         Returns:
-            str: The file path that was loaded.
+            MMObservation: Photo metadata plus an image attachment for the model.
         """
         with disable_events():
             return cast("StatefulAlbumApp", self.app).view_photo(self.photo_id)
