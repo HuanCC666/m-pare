@@ -21,9 +21,9 @@ echo "Started at: $STARTED_AT"
 echo "========================================"
 echo ""
 
-VARYING_MODELS=(gpt-5 claude-4.5-sonnet gemini-3-pro qwen-3-4b-it)
+VARYING_MODELS=(gpt-5 claude-4.5-sonnet gemini-3-pro qwen-3-4b-it glm-5.1 kimi-k2.6)
 # 2 directions (fix-exec, fix-obs) x N varying models.
-TOTAL_CONFIGS=$(( ${#VARYING_MODELS[@]} * 2 ))
+TOTAL_CONFIGS=$((${#VARYING_MODELS[@]} * 2))
 
 CURRENT=0
 FAILED=0
@@ -37,11 +37,11 @@ for OBSERVE in "${VARYING_MODELS[@]}"; do
   echo "[$CURRENT/$TOTAL_CONFIGS] split=ablation, fix-exec, user=gpt-5-mini, observe=$OBSERVE, execute=claude-4.5-sonnet"
   echo "========================================"
   if ! uv run pare benchmark run \
-      --split ablation \
-      --observe-model "$OBSERVE" --execute-model claude-4.5-sonnet \
-      --user-model gpt-5-mini --max-turns 10 -omi 5 -emi 10 -umi 1 \
-      --runs 4 -c 6 --executor-type thread \
-      --experiment-name paper_asymmetric_fix_exec --export --output-dir ./traces --log-level ERROR; then
+    --split ablation \
+    --observe-model "$OBSERVE" --execute-model claude-4.5-sonnet \
+    --user-model gpt-5-mini --max-turns 10 -omi 5 -emi 10 -umi 1 \
+    --runs 4 -c 6 --executor-type thread \
+    --experiment-name paper_asymmetric_fix_exec --export --output-dir ./traces --log-level ERROR; then
     FAILED=$((FAILED + 1))
     FAILED_CONFIGS+=("[fix-exec] observe=$OBSERVE")
     echo "WARN: config failed: [fix-exec] observe=$OBSERVE" >&2
@@ -56,11 +56,11 @@ for EXECUTE in "${VARYING_MODELS[@]}"; do
   echo "[$CURRENT/$TOTAL_CONFIGS] split=ablation, fix-obs, user=gpt-5-mini, observe=claude-4.5-sonnet, execute=$EXECUTE"
   echo "========================================"
   if ! uv run pare benchmark run \
-      --split ablation \
-      --observe-model claude-4.5-sonnet --execute-model "$EXECUTE" \
-      --user-model gpt-5-mini --max-turns 10 -omi 5 -emi 10 -umi 1 \
-      --runs 4 -c 6 --executor-type thread \
-      --experiment-name paper_asymmetric_fix_obs --export --output-dir ./traces --log-level ERROR; then
+    --split ablation \
+    --observe-model claude-4.5-sonnet --execute-model "$EXECUTE" \
+    --user-model gpt-5-mini --max-turns 10 -omi 5 -emi 10 -umi 1 \
+    --runs 4 -c 6 --executor-type thread \
+    --experiment-name paper_asymmetric_fix_obs --export --output-dir ./traces --log-level ERROR; then
     FAILED=$((FAILED + 1))
     FAILED_CONFIGS+=("[fix-obs] execute=$EXECUTE")
     echo "WARN: config failed: [fix-obs] execute=$EXECUTE" >&2
@@ -74,7 +74,7 @@ echo "Asymmetric experiments complete"
 echo "Started:  $STARTED_AT"
 echo "Finished: $FINISHED_AT"
 echo "Configs:  $((CURRENT - FAILED))/$TOTAL_CONFIGS succeeded, $FAILED failed"
-if (( FAILED > 0 )); then
+if ((FAILED > 0)); then
   echo "Failed configs:"
   for CFG in "${FAILED_CONFIGS[@]}"; do
     echo "  - $CFG"

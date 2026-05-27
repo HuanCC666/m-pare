@@ -204,6 +204,8 @@ cython_debug/
 .claude
 .gemini
 .serena
+.codex
+.agents
 AGENTS.md
 CLAUDE.md
 pare/**/CLAUDE.md

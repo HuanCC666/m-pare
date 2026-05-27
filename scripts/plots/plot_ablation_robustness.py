@@ -24,6 +24,7 @@ MODEL_DISPLAY_NAMES = {
     "claude-4.5-sonnet": "Claude 4.5 Sonnet",
     "gpt-5": "GPT-5",
     "gemini-3-pro": "Gemini 3 Pro",
+    "gemini-3-flash": "Gemini 3 Flash",
     "qwen-3-4b-it": "Qwen3-4B",
     "gemma-3-4b-it": "Gemma3-4B",
     "llama-3.2-3b-it": "Llama3.2-3B",
@@ -34,6 +35,7 @@ MODEL_MARKERS = {
     "claude-4.5-sonnet": "o",
     "gpt-5": "P",
     "gemini-3-pro": "X",
+    "gemini-3-flash": "v",
     "qwen-3-4b-it": "s",
     "gemma-3-4b-it": "^",
     "llama-3.2-3b-it": "D",
@@ -44,6 +46,7 @@ MODEL_COLORS = {
     "claude-4.5-sonnet": "#0072B2",  # blue
     "gpt-5": "#D55E00",  # vermillion
     "gemini-3-pro": "#56B4E9",  # sky blue
+    "gemini-3-flash": "#332288",  # indigo
     "qwen-3-4b-it": "#E69F00",  # orange
     "gemma-3-4b-it": "#009E73",  # green
     "llama-3.2-3b-it": "#CC79A7",  # pink
@@ -492,7 +495,7 @@ def main() -> None:
         print(f"\nTool Failure Probability data - Found {len(tfp_data)} models:")
         for model in sorted(tfp_data.keys()):
             print(f"  - {model}: {len(tfp_data[model]['tfp'])} data points")
-        plot_tfp_metrics(tfp_data, output_dir / "ablation_robustness_tfp.pdf")
+        plot_tfp_metrics(tfp_data, output_dir / "robustness_tfp.pdf")
     else:
         print("No TFP data found (no results with num_env_events_per_minute == 0)")
 
@@ -507,7 +510,7 @@ def main() -> None:
             print(f"\nEnvironment Noise data - Found {len(enmi_data)} models:")
             for model in sorted(enmi_data.keys()):
                 print(f"  - {model}: {len(enmi_data[model]['enmi'])} data points")
-            plot_enmi_metrics(enmi_data, output_dir / "ablation_robustness_enmi.pdf")
+            plot_enmi_metrics(enmi_data, output_dir / "robustness_enmi.pdf")
         else:
             print(f"\nEnvironment Noise data has only one value ({all_enmi}), skipping plot")
     else:
