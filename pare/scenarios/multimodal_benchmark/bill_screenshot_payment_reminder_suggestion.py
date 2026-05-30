@@ -66,8 +66,7 @@ class BillScreenshotPaymentReminderSuggestion(PAREScenario):
         if not local_bill_path.exists():
             raise FileNotFoundError(
                 f"Bill screenshot not found: {local_bill_path}. "
-                "Set PARE_BILL_SCREENSHOT_LOCAL_PATH or place the image at "
-                f"{self.DEFAULT_LOCAL_BILL_IMAGE_PATH}."
+                f"Place utility_bill_screenshot.jpg under {self.DEFAULT_LOCAL_BILL_IMAGE_PATH.parent}."
             )
         with self.files.open("/utility_bill_screenshot.jpg", "wb") as f:
             f.write(jpeg_bytes_for_sandbox(local_bill_path.read_bytes()))

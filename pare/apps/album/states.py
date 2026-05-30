@@ -2,16 +2,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
+from are.simulation.agents.llm.types import MMObservation  # noqa: TC002 - runtime import required for get_type_hints()
 from are.simulation.types import OperationType, disable_events
 
+from pare.apps.album.types import (  # noqa: TC001 - runtime import required for get_type_hints()
+    FolderInfo,
+    Photo,
+    ReturnedPhotos,
+)
 from pare.apps.core import AppState
 from pare.apps.tool_decorators import pare_event_registered, user_tool
 
 if TYPE_CHECKING:
-    from are.simulation.agents.llm.types import MMObservation
-
     from pare.apps.album.app import StatefulAlbumApp
-    from pare.apps.album.types import FolderInfo, Photo, ReturnedPhotos
 
 
 class PhotoList(AppState):

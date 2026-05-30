@@ -57,8 +57,7 @@ class WhiteboardPhotoMinutesTodoSuggestion(PAREScenario):
         if not local_whiteboard_path.exists():
             raise FileNotFoundError(
                 f"Whiteboard photo not found: {local_whiteboard_path}. "
-                "Set PARE_WHITEBOARD_PHOTO_LOCAL_PATH or place the image at "
-                f"{self.DEFAULT_LOCAL_WHITEBOARD_PHOTO_PATH}."
+                f"Place meeting_whiteboard_photo.jpg under {self.DEFAULT_LOCAL_WHITEBOARD_PHOTO_PATH.parent}."
             )
         with self.files.open("/meeting_whiteboard_photo.jpg", "wb") as f:
             f.write(jpeg_bytes_for_sandbox(local_whiteboard_path.read_bytes()))

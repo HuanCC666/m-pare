@@ -72,7 +72,10 @@ class RiceCookerPhotoCartSuggestion(PAREScenario):
         )
 
         if not local_photo_path.exists():
-            raise FileNotFoundError(f"Rice cooker photo not found: {local_photo_path}")
+            raise FileNotFoundError(
+                f"Rice cooker photo not found: {local_photo_path}. "
+                f"Place photo.jpg under {self.DEFAULT_LOCAL_RICE_COOKER_PHOTO_PATH.parent}."
+            )
 
         with self.files.open("/photo.jpg", "wb") as f:
             f.write(jpeg_bytes_for_sandbox(local_photo_path.read_bytes()))
