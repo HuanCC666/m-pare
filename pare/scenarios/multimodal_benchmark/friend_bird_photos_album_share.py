@@ -113,9 +113,7 @@ class FriendBirdPhotosAlbumShare(PAREScenario):
         override = os.getenv(env_key)
         path = Path(override) if override else asset_path
         if not path.exists():
-            raise FileNotFoundError(
-                f"Scenario image not found: {path}. Add {asset_path.name} under {_ASSETS_DIR} or set {env_key}."
-            )
+            raise FileNotFoundError(f"Scenario image not found: {path}. Add {asset_path.name} under {_ASSETS_DIR}.")
         return jpeg_bytes_for_sandbox(path.read_bytes())
 
     def init_and_populate_apps(self, *args: Any, **kwargs: Any) -> None:
@@ -204,7 +202,7 @@ class FriendBirdPhotosAlbumShare(PAREScenario):
                     "The little one on the railing and the hawk over the sky. "
                     "My mom would love them."
                 ),
-            ).delayed(8)
+            ).delayed(3)
 
             read_message_event = (
                 messaging_app.read_conversation(conversation_id=conversation_id, offset=0, limit=10)

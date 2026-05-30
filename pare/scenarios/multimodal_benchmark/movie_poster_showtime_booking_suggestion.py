@@ -67,8 +67,7 @@ class MoviePosterShowtimeBookingSuggestion(PAREScenario):
         if not local_poster_path.exists():
             raise FileNotFoundError(
                 f"Movie poster image not found: {local_poster_path}. "
-                "Set PARE_MOVIE_POSTER_LOCAL_PATH or place the image at "
-                f"{self.DEFAULT_LOCAL_POSTER_PATH}."
+                f"Place movie_teaser_poster.jpg under {self.DEFAULT_LOCAL_POSTER_PATH.parent}."
             )
         poster_bytes = jpeg_bytes_for_sandbox(local_poster_path.read_bytes())
         with self.files.open("/movie_teaser_poster.jpg", "wb") as f:

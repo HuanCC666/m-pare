@@ -61,8 +61,7 @@ class RentalPosterViewingPlanSuggestion(PAREScenario):
         if not local_poster_path.exists():
             raise FileNotFoundError(
                 f"Rental poster image not found: {local_poster_path}. "
-                "Set PARE_RENTAL_POSTER_LOCAL_PATH or place the image at "
-                f"{self.DEFAULT_LOCAL_POSTER_PATH}."
+                f"Place rental_poster_photo.jpg under {self.DEFAULT_LOCAL_POSTER_PATH.parent}."
             )
         with self.files.open("/rental_poster_photo.jpg", "wb") as f:
             f.write(jpeg_bytes_for_sandbox(local_poster_path.read_bytes()))
