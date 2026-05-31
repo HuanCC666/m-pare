@@ -239,7 +239,9 @@ data/annotations/
 .worktrees/
 
 pare/scenarios/multimodal_benchmark/assets
+pare/cli/benchmark.py
 
 # Python template ignores lib/ globally; keep scenario helper package tracked
 !pare/scenarios/multimodal_benchmark/lib/
 !pare/scenarios/multimodal_benchmark/lib/**
+pare/scenarios/multimodal_benchmark/lib/__pycache__/
