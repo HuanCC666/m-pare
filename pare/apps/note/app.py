@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from are.simulation.agents.llm.types import MMObservation
+from are.simulation.agents.multimodal import Attachment
 from are.simulation.apps.app import Protocol
 from are.simulation.tool_utils import OperationType, app_tool, data_tool, env_tool
 from are.simulation.types import EventType, disable_events
@@ -25,6 +27,18 @@ from pare.apps.note.types import Note, ReturnedNotes
 from pare.apps.tool_decorators import pare_event_registered
 
 logger = logging.getLogger(__name__)
+
+_IMAGE_EXTENSIONS: frozenset[str] = frozenset({"jpg", "jpeg", "png", "gif", "webp", "heic", "bmp"})
+
+_MIME_BY_IMAGE_EXT: dict[str, str] = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "gif": "image/gif",
+    "webp": "image/webp",
+    "heic": "image/heic",
+    "bmp": "image/bmp",
+}
 
 
 class NotesFolder:
@@ -777,6 +791,67 @@ class StatefulNotesApp(StatefulApp):
             return []
 
         return list(note.attachments.keys())
+
+    @staticmethod
+    def _mime_for_attachment_name(name: str) -> str | None:
+        ext = Path(name).suffix.lstrip(".").lower()
+        if ext in _IMAGE_EXTENSIONS:
+            return _MIME_BY_IMAGE_EXT.get(ext)
+        return None
+
+    def _resolve_attachment_bytes(self, note: Note, attachment: str) -> tuple[bytes, str]:
+        """Load base64-encoded attachment bytes and a display filename."""
+        if note.attachments:
+            if attachment in note.attachments:
+                return note.attachments[attachment], attachment
+            basename = Path(attachment).name
+            if basename in note.attachments:
+                return note.attachments[basename], basename
+
+        if self.internal_fs is not None and self.internal_fs.exists(attachment):
+            with disable_events(), self.internal_fs.open(attachment, "rb") as f:
+                return base64.b64encode(f.read()), Path(attachment).name
+
+        raise KeyError(f"Attachment {attachment} not found in note {note.note_id}")
+
+    def _attachment_to_mm_observation(self, note: Note, attachment: str) -> MMObservation:
+        """Return note context plus raster bytes for vision models."""
+        image_b64, file_name = self._resolve_attachment_bytes(note, attachment)
+        if not image_b64:
+            raise ValueError(f"Attachment is empty: {attachment}")
+        mime = self._mime_for_attachment_name(file_name)
+        if mime is None:
+            raise ValueError(f"Attachment is not a supported raster image: {file_name}")
+        mm_attachment = Attachment(base64_data=image_b64, mime=mime, name=file_name)
+        content = f"Note: {note.title}\nAttachment: {file_name}\nNote ID: {note.note_id}"
+        return MMObservation(content=content, attachments=[mm_attachment])
+
+    @type_check
+    @app_tool()
+    @pare_event_registered(operation_type=OperationType.READ, event_type=EventType.AGENT)
+    def view_attachment(self, note_id: str, attachment: str) -> MMObservation:
+        """Load an image attachment from a note into the agent context.
+
+        Call ``list_attachments`` first to discover attachment names, then use
+        this for the expensive multimodal read of image content.
+
+        Args:
+            note_id (str): Target note ID.
+            attachment (str): Attachment name from ``list_attachments`` (e.g.
+                ``business_card.jpg``) or sandbox path to the file.
+
+        Returns:
+            MMObservation: Note context plus an image attachment for the model.
+
+        Raises:
+            KeyError: If note or attachment not found.
+            ValueError: If the attachment is empty or not a supported image type.
+        """
+        result = self._get_note_from_any_folder(note_id)
+        if result is None:
+            raise KeyError(f"Note {note_id} not found")
+        _, note = result
+        return self._attachment_to_mm_observation(note, attachment)
 
     def _resolve_note_id(self, args: dict[str, Any], metadata: object | None) -> str | None:
         """Extract note_id from args or metadata. Assumes that note_id is either in args or return value of the completed event.

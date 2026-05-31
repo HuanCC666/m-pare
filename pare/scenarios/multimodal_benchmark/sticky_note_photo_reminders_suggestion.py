@@ -91,7 +91,6 @@ class StickyNotePhotoRemindersSuggestion(PAREScenario):
         """Oracle: read note → view sticky attachment → propose → three reminders."""
         aui = self.get_typed_app(PAREAgentUserInterface)
         note_app = self.get_typed_app(StatefulNotesApp, "Notes")
-        files_app = self.get_typed_app(SandboxLocalFileSystem, "Files")
         reminder_app = self.get_typed_app(StatefulReminderApp, "Reminders")
 
         # Seed attachment after state init but before capture to avoid bytes in initial-state JSON.
@@ -101,7 +100,9 @@ class StickyNotePhotoRemindersSuggestion(PAREScenario):
             read_note_event = note_app.get_note_by_id(note_id=self.trigger_note_id).oracle().delayed(8)
 
             view_sticky_event = (
-                files_app.display(path=_STICKY_PATH).oracle().depends_on(read_note_event, delay_seconds=1)
+                note_app.view_attachment(note_id=self.trigger_note_id, attachment=Path(_STICKY_PATH).name)
+                .oracle()
+                .depends_on(read_note_event, delay_seconds=1)
             )
 
             proposal_event = (

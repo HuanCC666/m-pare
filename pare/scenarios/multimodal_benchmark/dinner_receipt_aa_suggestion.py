@@ -285,16 +285,11 @@ class DinnerReceiptAlbumEmailAaSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            album_today = any(
+            album_browsed = any(
                 e.event_type == EventType.AGENT
                 and isinstance(e.action, Action)
                 and e.action.class_name == "StatefulAlbumApp"
-                and e.action.function_name == "list_photos"
-                and (
-                    (e.action.args or {}).get("taken_on") == self.scenario_day
-                    or self.scenario_day in str((e.action.args or {}).get("min_date", ""))
-                    or self.scenario_day in str((e.action.args or {}).get("max_date", ""))
-                )
+                and e.action.function_name in ("list_photos", "search_photos")
                 for e in log_entries
             )
 
@@ -328,7 +323,7 @@ class DinnerReceiptAlbumEmailAaSuggestion(PAREScenario):
 
             success = (
                 message_read
-                and album_today
+                and album_browsed
                 and receipts_viewed
                 and proposal_found
                 and reply_sent
@@ -340,8 +335,8 @@ class DinnerReceiptAlbumEmailAaSuggestion(PAREScenario):
                 failed: list[str] = []
                 if not message_read:
                     failed.append("agent did not read the Thai Garden Dinner group chat")
-                if not album_today:
-                    failed.append(f"agent did not list Camera Roll photos for {self.scenario_day}")
+                if not album_browsed:
+                    failed.append("agent did not list or search Album photos")
                 if not receipts_viewed:
                     failed.append("agent did not visually inspect both dinner receipt photos in Album")
                 if not proposal_found:

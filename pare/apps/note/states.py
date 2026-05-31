@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
+from are.simulation.agents.llm.types import MMObservation  # noqa: TC002 - runtime import for get_type_hints()
 from are.simulation.types import OperationType, disable_events
 
 from pare.apps.core import AppState
@@ -155,6 +156,20 @@ class NoteDetail(AppState):
         """
         with disable_events():
             return cast("StatefulNotesApp", self.app).list_attachments(self.note_id)
+
+    @user_tool()
+    @pare_event_registered(operation_type=OperationType.READ)
+    def view_attachment(self, attachment: str) -> MMObservation:
+        """Load an image attachment into the agent context for visual inspection.
+
+        Args:
+            attachment (str): Attachment name from ``list_attachments``.
+
+        Returns:
+            MMObservation: Note context plus an image attachment for the model.
+        """
+        with disable_events():
+            return cast("StatefulNotesApp", self.app).view_attachment(self.note_id, attachment)
 
     @user_tool()
     @pare_event_registered(operation_type=OperationType.WRITE)

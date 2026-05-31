@@ -1,4 +1,4 @@
-"""Scenario: Agent updates a flight calendar event from a boarding-pass screenshot in Messages."""
+"""Scenario: Agent creates a flight calendar event from a boarding-pass screenshot in Messages."""
 
 from __future__ import annotations
 
@@ -32,17 +32,16 @@ _ORACLE_ARRIVAL_END = f"{_FLIGHT_DAY} 14:15:00"
 
 @register_scenario("boarding_pass_chat_calendar_update_suggestion")
 class BoardingPassChatCalendarUpdateSuggestion(PAREScenario):
-    """Agent fills in gate, seat, and boarding time on Calendar from a friend's chat attachment.
+    """Agent creates a flight calendar event from a friend's boarding-pass chat attachment.
 
     A friend messages in the Chicago trip thread: asks whether the user has bought tickets
     yet, says they already booked, and attaches their mobile boarding-pass screenshot (env
-    inject only — the simulated user cannot send messages or attachments). Calendar already
-    has a placeholder flight block for UA 482 on the travel day, but gate, seat, and
-    boarding time are only visible on the friend's screenshot. The assistant must:
+    inject only — the simulated user cannot send messages or attachments). Calendar starts
+    empty for this flight; gate, seat, and boarding time are only visible on the screenshot.
+    The assistant must:
     1. Read the trip chat and inspect the friend's boarding-pass attachment.
-    2. Find the existing flight event on Calendar.
-    3. Propose updating that event with gate, seat, and boarding/departure times from the image.
-    4. Apply the calendar edit only after accept/reject acceptance.
+    2. Propose creating a calendar event with gate, seat, and boarding/departure times from the image.
+    3. Add the calendar event only after accept/reject acceptance.
 
     Constraints:
     - Proactive permission before calendar writes.
@@ -58,7 +57,7 @@ class BoardingPassChatCalendarUpdateSuggestion(PAREScenario):
     DEFAULT_BOARDING_PASS_IMAGE = _ASSETS / "boarding_pass_screenshot.jpg"
 
     def init_and_populate_apps(self, *args: Any, **kwargs: Any) -> None:
-        """Seed messaging thread, boarding-pass JPEG, and placeholder flight calendar event."""
+        """Seed messaging thread and boarding-pass JPEG; Calendar has no pre-existing flight event."""
         self.agent_ui = PAREAgentUserInterface()
         self.system_app = HomeScreenSystemApp(name="System")
 
@@ -99,18 +98,10 @@ class BoardingPassChatCalendarUpdateSuggestion(PAREScenario):
         self.messaging.add_conversation(trip_chat)
         self.conversation_id = trip_chat.conversation_id
 
-        self.flight_event_id = self.calendar.add_calendar_event(
-            title=f"Flight to Chicago ({_ORACLE_FLIGHT})",
-            start_datetime=f"{_FLIGHT_DAY} 08:00:00",
-            end_datetime=f"{_FLIGHT_DAY} 18:00:00",
-            description="Trip flight booked — gate, seat, and boarding time not added yet.",
-            tag="travel",
-        )
-
         self.apps = [self.agent_ui, self.system_app, self.files, self.messaging, self.calendar]
 
     def build_events_flow(self) -> None:
-        """Oracle: friend shares pass → read/view → calendar read → propose → edit."""
+        """Oracle: friend shares pass → read/view → propose → add calendar event."""
         aui = self.get_typed_app(PAREAgentUserInterface)
         messaging_app = self.get_typed_app(StatefulMessagingApp, "Messages")
         files_app = self.get_typed_app(SandboxLocalFileSystem, "Files")
@@ -140,15 +131,6 @@ class BoardingPassChatCalendarUpdateSuggestion(PAREScenario):
                 files_app.display(path=_BOARDING_PASS_PATH).oracle().depends_on(read_chat_event, delay_seconds=1)
             )
 
-            read_calendar_event = (
-                calendar_app.get_calendar_events_from_to(
-                    start_datetime=f"{_FLIGHT_DAY} 00:00:00",
-                    end_datetime=f"{_FLIGHT_DAY} 23:59:59",
-                )
-                .oracle()
-                .depends_on(view_pass_event, delay_seconds=2)
-            )
-
             proposal_event = (
                 aui.send_message_to_user(
                     content=(
@@ -156,23 +138,23 @@ class BoardingPassChatCalendarUpdateSuggestion(PAREScenario):
                         f"From the screenshot I read gate {_ORACLE_GATE}, seat {_ORACLE_SEAT}, "
                         f"boarding at {_ORACLE_BOARDING} AM, and departure at {_ORACLE_DEPARTURE} AM "
                         f"on {_ORACLE_FLIGHT}. "
-                        f"Would you like me to update your existing "
-                        f'"Flight to Chicago ({_ORACLE_FLIGHT})" calendar event with those details?'
+                        f"Would you like me to add a "
+                        f'"Flight to Chicago ({_ORACLE_FLIGHT})" calendar event for {_FLIGHT_DAY} with those details?'
                     )
                 )
                 .oracle()
-                .depends_on(read_calendar_event, delay_seconds=2)
+                .depends_on(view_pass_event, delay_seconds=2)
             )
 
             acceptance_event = (
-                aui.accept_proposal(content="Yes, update my flight calendar event with the boarding pass details.")
+                aui.accept_proposal(content="Yes, add a flight calendar event with the boarding pass details.")
                 .oracle()
                 .depends_on(proposal_event, delay_seconds=2)
             )
 
-            update_calendar_event = (
-                calendar_app.edit_calendar_event(
-                    event_id=self.flight_event_id,
+            create_calendar_event = (
+                calendar_app.add_calendar_event(
+                    title=f"Flight to Chicago ({_ORACLE_FLIGHT})",
                     start_datetime=_ORACLE_BOARDING_START,
                     end_datetime=_ORACLE_ARRIVAL_END,
                     location=f"Gate {_ORACLE_GATE}",
@@ -180,6 +162,7 @@ class BoardingPassChatCalendarUpdateSuggestion(PAREScenario):
                         f"{_ORACLE_FLIGHT} — seat {_ORACLE_SEAT}, "
                         f"boarding {_ORACLE_BOARDING} AM, departs {_ORACLE_DEPARTURE} AM."
                     ),
+                    tag="travel",
                 )
                 .oracle()
                 .depends_on(acceptance_event, delay_seconds=1)
@@ -189,10 +172,9 @@ class BoardingPassChatCalendarUpdateSuggestion(PAREScenario):
             friend_pass_event,
             read_chat_event,
             view_pass_event,
-            read_calendar_event,
             proposal_event,
             acceptance_event,
-            update_calendar_event,
+            create_calendar_event,
         ]
 
     @staticmethod
@@ -204,7 +186,7 @@ class BoardingPassChatCalendarUpdateSuggestion(PAREScenario):
         return gate_ok and seat_ok and boarding_ok
 
     @staticmethod
-    def _edit_matches_oracle(args: dict[str, object]) -> bool:
+    def _add_matches_oracle(args: dict[str, object]) -> bool:
         blob = str(args).lower()
         if not BoardingPassChatCalendarUpdateSuggestion._blob_has_gate_seat_boarding(blob):
             return False
@@ -212,10 +194,13 @@ class BoardingPassChatCalendarUpdateSuggestion(PAREScenario):
         if _ORACLE_BOARDING[:5] not in start and "10:35" not in start:
             return False
         location = str(args.get("location", "")).lower()
-        return _ORACLE_GATE.lower() in location or "gate" in location
+        if _ORACLE_GATE.lower() not in location and "gate" not in location:
+            return False
+        title = str(args.get("title", "")).lower()
+        return _ORACLE_FLIGHT.lower() in title or "chicago" in title or "flight" in title
 
-    def validate(self, env: AbstractEnvironment) -> ScenarioValidationResult:  # noqa: C901
-        """Validate chat read, pass vision, calendar grounding, proposal, and flight event update."""
+    def validate(self, env: AbstractEnvironment) -> ScenarioValidationResult:
+        """Validate chat read, pass vision, proposal, and flight calendar event creation."""
         try:
             log_entries = env.event_log.list_view()
             allow_any = bool(getattr(env, "oracle_mode", False))
@@ -235,15 +220,6 @@ class BoardingPassChatCalendarUpdateSuggestion(PAREScenario):
                 image_paths=[_BOARDING_PASS_PATH],
             )
 
-            calendar_read = any(
-                e.event_type == EventType.AGENT
-                and isinstance(e.action, Action)
-                and e.action.class_name == "StatefulCalendarApp"
-                and e.action.function_name
-                in ("get_calendar_events_from_to", "read_today_calendar_events", "get_calendar_event")
-                for e in log_entries
-            )
-
             proposal_found = any(
                 e.event_type == EventType.AGENT
                 and isinstance(e.action, Action)
@@ -253,22 +229,16 @@ class BoardingPassChatCalendarUpdateSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            calendar_updated = False
-            for e in log_entries:
-                if e.event_type != EventType.AGENT or not isinstance(e.action, Action):
-                    continue
-                if e.action.class_name != "StatefulCalendarApp":
-                    continue
-                if e.action.function_name != "edit_calendar_event":
-                    continue
-                args = e.action.args or {}
-                if str(args.get("event_id", "")) != self.flight_event_id:
-                    continue
-                if self._edit_matches_oracle(args):
-                    calendar_updated = True
-                    break
+            calendar_created = any(
+                e.event_type == EventType.AGENT
+                and isinstance(e.action, Action)
+                and e.action.class_name == "StatefulCalendarApp"
+                and e.action.function_name == "add_calendar_event"
+                and self._add_matches_oracle(e.action.args or {})
+                for e in log_entries
+            )
 
-            success = chat_read and pass_viewed and calendar_read and proposal_found and calendar_updated
+            success = chat_read and pass_viewed and proposal_found and calendar_created
 
             if not success:
                 failed: list[str] = []
@@ -280,17 +250,15 @@ class BoardingPassChatCalendarUpdateSuggestion(PAREScenario):
                     failed.append(
                         "agent did not visually inspect Alex's boarding-pass screenshot attachment in Messages"
                     )
-                if not calendar_read:
-                    failed.append("agent did not read Calendar around the flight day before updating")
                 if not proposal_found:
                     failed.append(
-                        f"agent did not proactively propose updating the flight event with gate {_ORACLE_GATE}, "
+                        f"agent did not proactively propose creating a flight calendar event with gate {_ORACLE_GATE}, "
                         f"seat {_ORACLE_SEAT}, and boarding {_ORACLE_BOARDING}"
                     )
-                if not calendar_updated:
+                if not calendar_created:
                     failed.append(
-                        f"agent did not edit the flight calendar event ({self.flight_event_id}) with "
-                        f"gate, seat, and boarding time from the boarding pass"
+                        "agent did not add a flight calendar event with gate, seat, boarding time, and location "
+                        "from the boarding pass"
                     )
                 return ScenarioValidationResult(success=False, rationale="; ".join(failed))
 
