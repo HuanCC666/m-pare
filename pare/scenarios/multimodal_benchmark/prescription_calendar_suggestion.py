@@ -92,7 +92,6 @@ class PrescriptionCalendarSuggestion(PAREScenario):
         """Oracle: read note → view label → propose → create medication calendar blocks."""
         aui = self.get_typed_app(PAREAgentUserInterface)
         note_app = self.get_typed_app(StatefulNotesApp, "Notes")
-        files_app = self.get_typed_app(SandboxLocalFileSystem, "Files")
         calendar_app = self.get_typed_app(StatefulCalendarApp, "Calendar")
 
         day0 = self.oracle_days[0]
@@ -103,7 +102,11 @@ class PrescriptionCalendarSuggestion(PAREScenario):
         with EventRegisterer.capture_mode():
             read_note_event = note_app.get_note_by_id(note_id=self.trigger_note_id).oracle().delayed(8)
 
-            view_label_event = files_app.display(path=_LABEL_PATH).oracle().depends_on(read_note_event, delay_seconds=1)
+            view_label_event = (
+                note_app.view_attachment(note_id=self.trigger_note_id, attachment=Path(_LABEL_PATH).name)
+                .oracle()
+                .depends_on(read_note_event, delay_seconds=1)
+            )
 
             check_calendar_event = (
                 calendar_app.get_calendar_events_from_to(

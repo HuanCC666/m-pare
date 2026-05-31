@@ -40,6 +40,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def default_results_dir() -> Path:
+    """Return the default results directory for benchmark artifacts.
+
+    When the CLI is run from ``m-pare/``, use the sibling ``../results`` at the
+    workspace root (``multimodal-pare/results``). Otherwise fall back to
+    ``./results`` relative to the current working directory.
+    """
+    cwd = Path.cwd()
+    if cwd.name == "m-pare":
+        return (cwd.parent / "results").resolve()
+    return (cwd / "results").resolve()
+
+
 class ExecutorType(StrEnum):
     """Executor type for parallel scenario execution."""
 
@@ -229,9 +242,10 @@ def run_single_config(
     config_descriptor = build_config_descriptor(config)
     logger.info(f"Running config: {config_descriptor}")
 
-    # Set output directory if exporting
-    if config.export and output_dir:
-        config.output_dir = str(output_dir / base_dir_name / config_descriptor)
+    # Set output directory if exporting (default to results_dir when --output-dir omitted)
+    if config.export:
+        trace_base = output_dir if output_dir is not None else results_dir
+        config.output_dir = str(trace_base / base_dir_name / config_descriptor)
         Path(config.output_dir).mkdir(parents=True, exist_ok=True)
 
     # Get fresh scenario iterator from factory
@@ -401,15 +415,13 @@ def run(
     ] = ExecutorType.thread,
     # Output configuration
     results_dir: Annotated[
-        Path,
-        typer.Option("--results-dir", help="Directory for JSON result files"),
-    ] = Path("results"),
-    output_dir: Annotated[
-
         Path | None,
-        typer.Option("--output-dir", help="Directory for trace exports"),
+        typer.Option("--results-dir", help="Directory for result summaries and trace exports"),
     ] = None,
-
+    output_dir: Annotated[
+        Path | None,
+        typer.Option("--output-dir", help="Directory for trace exports (default: --results-dir when --export is set)"),
+    ] = None,
     export: Annotated[
         bool,
         typer.Option("--export/--no-export", help="Export scenario traces"),
@@ -537,6 +549,10 @@ def run(
         execute_max_iterations=execute_max_iterations,
     )
 
+    resolved_results_dir = results_dir if results_dir is not None else default_results_dir()
+    resolved_results_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Results directory: {resolved_results_dir}")
+
     # Run the config
     _config_descriptor, result = run_single_config(
         config=config,
@@ -544,7 +560,7 @@ def run(
         runs=runs,
         split_name=split_name,
         base_dir_name=base_dir_name,
-        results_dir=results_dir,
+        results_dir=resolved_results_dir,
         output_dir=output_dir,
     )
 

@@ -95,7 +95,7 @@ class WhiteboardPhotoMinutesTodoSuggestion(PAREScenario):
                 subject="Whiteboard snapshot from today's planning",
                 content=(
                     "Hey — grabbed a photo of the board after we wrapped earlier. "
-                    "Can you turn the scribbles into something we can actually follow (who owns what / when)? "
+                    "Can you turn the scribbles into something we can actually follow ? "
                     "A short write-up and a few reminders for the dates would help a lot. "
                     "Pic attached, sorry if my handwriting is awful."
                 ),

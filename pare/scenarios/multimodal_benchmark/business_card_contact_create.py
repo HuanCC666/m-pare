@@ -87,7 +87,6 @@ class BusinessCardNoteContactCreateSuggestion(PAREScenario):
         """Oracle: read note → view card → propose → add_new_contact."""
         aui = self.get_typed_app(PAREAgentUserInterface)
         note_app = self.get_typed_app(StatefulNotesApp, "Notes")
-        files_app = self.get_typed_app(SandboxLocalFileSystem, "Files")
         contacts_app = self.get_typed_app(StatefulContactsApp, "Contacts")
 
         # Seed attachment after state init but before capture to avoid bytes in initial-state JSON.
@@ -96,7 +95,11 @@ class BusinessCardNoteContactCreateSuggestion(PAREScenario):
         with EventRegisterer.capture_mode():
             read_note_event = note_app.get_note_by_id(note_id=self.trigger_note_id).oracle().delayed(8)
 
-            view_card_event = files_app.display(path=_CARD_PATH).oracle().depends_on(read_note_event, delay_seconds=1)
+            view_card_event = (
+                note_app.view_attachment(note_id=self.trigger_note_id, attachment=Path(_CARD_PATH).name)
+                .oracle()
+                .depends_on(read_note_event, delay_seconds=1)
+            )
 
             proposal_event = (
                 aui.send_message_to_user(
