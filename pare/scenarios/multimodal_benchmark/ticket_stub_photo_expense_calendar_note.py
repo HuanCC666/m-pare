@@ -218,7 +218,8 @@ class TicketStubPhotoExpenseCalendarNoteSuggestion(PAREScenario):
                 and isinstance(e.action, Action)
                 and e.action.class_name == "StatefulReminderApp"
                 and e.action.function_name
-                in ("list_all_reminders", "list_upcoming_reminders", "list_due_reminders", "open_reminder")
+                # Proactive agent reads reminders via Reminders app_tools (not the UI state user_tools).
+                in ("get_all_reminders", "get_due_reminders", "get_reminder_with_id")
                 for e in log_entries
             )
 

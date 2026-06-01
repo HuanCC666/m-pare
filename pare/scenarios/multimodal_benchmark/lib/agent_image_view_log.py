@@ -1,4 +1,4 @@
-"""Helpers to detect agent image viewing in scenario event logs (Files, Email, Album, Notes)."""
+"""Helpers to detect agent image viewing in scenario event logs (Files, Email, Album, Notes, Messages)."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 _FILE_IMAGE_FUNS = frozenset({"display", "cat", "read_document"})
 _EMAIL_IMAGE_FUNS = frozenset({"get_email_by_id", "download_attachments"})
 _NOTES_IMAGE_FUNS = frozenset({"view_attachment"})
+_MESSAGING_IMAGE_FUNS = frozenset({"read_conversation"})
 
 
 def _note_attachment_matches(
@@ -40,6 +41,7 @@ def agent_viewed_image(
     image_paths: frozenset[str],
     photo_ids: frozenset[str],
     email_id: str | None,
+    conversation_id: str | None = None,
     note_attachments: frozenset[tuple[str, str]] | None = None,
 ) -> bool:
     """True if this event plausibly exposed image content to the agent."""
@@ -64,6 +66,8 @@ def agent_viewed_image(
             note_attachments=note_attachment_set,
             image_path_basenames=image_path_basenames,
         )
+    if image_paths and act.class_name == "StatefulMessagingApp" and act.function_name in _MESSAGING_IMAGE_FUNS:
+        return not conversation_id or str(args.get("conversation_id", "")) == conversation_id
     return False
 
 
@@ -87,6 +91,9 @@ def _view_dedupe_key(event: CompletedEvent) -> str | None:
         attachment = args.get("attachment")
         if note_id and attachment:
             return f"notes:{note_id}:{Path(str(attachment)).name}"
+    if act.class_name == "StatefulMessagingApp" and act.function_name in _MESSAGING_IMAGE_FUNS:
+        cid = args.get("conversation_id")
+        return f"messages:{cid}" if cid else None
     return None
 
 
@@ -96,6 +103,7 @@ def log_has_agent_image_view(
     allow_any_event_type: bool,
     image_path: str = "",
     email_id: str = "",
+    conversation_id: str = "",
     image_paths: Collection[str] | None = None,
     photo_ids: Collection[str] | None = None,
     note_attachments: Collection[tuple[str, str]] | None = None,
@@ -110,6 +118,9 @@ def log_has_agent_image_view(
     Notes scenarios: pass ``note_attachments`` as ``(note_id, attachment_name)``
     pairs and/or ``image_path`` (matched by attachment basename).
 
+    Messages scenarios: pass ``image_paths`` for attachment sandbox paths and optionally
+    ``conversation_id`` to require ``StatefulMessagingApp.read_conversation`` on that thread.
+
     Use ``min_views`` when multiple distinct photos must be inspected.
     """
     paths = (
@@ -117,6 +128,7 @@ def log_has_agent_image_view(
     )
     ids = frozenset(photo_ids) if photo_ids is not None else frozenset()
     eid = email_id or None
+    cid = conversation_id or None
     notes = frozenset(note_attachments) if note_attachments is not None else frozenset()
 
     if not paths and not ids and not eid and not notes:
@@ -130,6 +142,7 @@ def log_has_agent_image_view(
             image_paths=paths,
             photo_ids=ids,
             email_id=eid,
+            conversation_id=cid,
             note_attachments=notes,
         ):
             continue

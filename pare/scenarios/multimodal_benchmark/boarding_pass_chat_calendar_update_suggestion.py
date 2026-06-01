@@ -218,6 +218,7 @@ class BoardingPassChatCalendarUpdateSuggestion(PAREScenario):
                 log_entries,
                 allow_any_event_type=allow_any,
                 image_paths=[_BOARDING_PASS_PATH],
+                conversation_id=self.conversation_id,
             )
 
             proposal_found = any(
