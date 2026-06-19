@@ -470,8 +470,15 @@ def build_oracle_block(app_instances: dict[str, object], selected_apps: list[str
 def _gather_event_registered_entries(inst: object) -> list[str]:
     entries: list[str] = []
     seen: set[str] = set()
-    for name, member in inspect.getmembers(inst, predicate=callable):
+    for name in dir(inst):
         if name.startswith("_"):
+            continue
+        try:
+            member = getattr(inst, name)
+        except Exception as exc:
+            logging.debug("Skipping %s.%s while gathering tools due to error: %s", inst.__class__.__name__, name, exc)
+            continue
+        if not callable(member):
             continue
         method = member
         if not getattr(method, "__event_registered__", False):
@@ -709,13 +716,27 @@ def main() -> None:
         help="If set, skip LLM calls and print the prompts for all agents instead.",
     )
     parser.add_argument(
+        "--asset-manifest",
+        dest="asset_manifest_path",
+        type=Path,
+        default=None,
+        help="Optional local JSON manifest of image assets to resolve for multimodal scenarios.",
+    )
+    parser.add_argument(
+        "--asset-dir",
+        dest="asset_dir",
+        type=Path,
+        default=None,
+        help="Optional output directory for resolved local image assets.",
+    )
+    parser.add_argument(
         "--apps",
         dest="selected_apps",
         nargs="*",
-        default=["StatefulMessagingApp", "StatefulContactsApp", "StatefulCalendarApp", "StatefulEmailApp"],
+        default=["SandboxLocalFileSystem", "StatefulEmailApp", "StatefulAlbumApp", "StatefulShoppingApp"],
         help=(
             "Explicit list of app class names to include (PAREAgentUserInterface and "
-            "HomeScreenSystemApp are always available). Defaults to all apps in the app definition scenario."
+            "HomeScreenSystemApp are always available). Defaults to multimodal-friendly Files, Email, Album, and Shopping apps."
         ),
     )
     args = parser.parse_args()
@@ -757,6 +778,8 @@ def main() -> None:
             debug_prompts=args.debug_prompts,
             resume_from_step2=args.resume_from_step2,
             resume_from_step=args.resume_from_step,
+            asset_manifest_path=args.asset_manifest_path,
+            asset_dir=args.asset_dir,
         )
         try:
             result = agent.run()

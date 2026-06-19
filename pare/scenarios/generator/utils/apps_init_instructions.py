@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from are.simulation.apps import SandboxLocalFileSystem
 from are.simulation.scenarios.scenario import ScenarioStatus, ScenarioValidationResult
 from are.simulation.scenarios.utils.registry import register_scenario
 
@@ -12,6 +13,7 @@ from are.simulation.scenarios.utils.registry import register_scenario
 from pare.apps import (
     HomeScreenSystemApp,
     PAREAgentUserInterface,
+    StatefulAlbumApp,
     StatefulCalendarApp,
     StatefulContactsApp,
     StatefulEmailApp,
@@ -37,6 +39,7 @@ class ScenarioWithAllPAREApps(PAREScenario):
 
     Initialized apps include:
     - Core: PAREAgentUserInterface, HomeScreenSystemApp
+    - Files/photos: SandboxLocalFileSystem, StatefulAlbumApp
     - Communication: StatefulEmailApp, StatefulMessagingApp
     - Organization: StatefulCalendarApp, StatefulContactsApp
     - Commerce & logistics: StatefulShoppingApp, StatefulCabApp
@@ -54,10 +57,14 @@ class ScenarioWithAllPAREApps(PAREScenario):
         # =============================================================================
         self.agui = PAREAgentUserInterface()  # Proactive agent-user interface
         self.system = HomeScreenSystemApp(name="System")  # PARE system app with navigation helpers
+        self.files = SandboxLocalFileSystem(name="Files")  # Shared filesystem for multimodal assets
 
         # Communication apps
         self.email = StatefulEmailApp(name="Emails")
+        self.email.internal_fs = self.files
         self.messaging = StatefulMessagingApp(name="Messages")
+        self.album = StatefulAlbumApp(name="Album")
+        self.album.internal_fs = self.files
 
         # Organization and productivity apps
         self.calendar = StatefulCalendarApp(name="Calendar")
@@ -77,6 +84,8 @@ class ScenarioWithAllPAREApps(PAREScenario):
             # Core PARE apps
             self.agui,
             self.system,
+            self.files,
+            self.album,
             # Communication apps
             self.email,
             self.messaging,
@@ -98,6 +107,8 @@ class ScenarioWithAllPAREApps(PAREScenario):
         # All the work is done in init_and_populate_apps() where all apps are initialized
         aui = self.get_typed_app(PAREAgentUserInterface)
         email = self.get_typed_app(StatefulEmailApp, "Emails")
+        files = self.get_typed_app(SandboxLocalFileSystem, "Files")
+        album = self.get_typed_app(StatefulAlbumApp, "Album")
         calendar = self.get_typed_app(StatefulCalendarApp, "Calendar")
         messaging = self.get_typed_app(StatefulMessagingApp, "Messages")
         contacts = self.get_typed_app(StatefulContactsApp, "Contacts")
@@ -108,8 +119,8 @@ class ScenarioWithAllPAREApps(PAREScenario):
         """Validate that all applications are properly initialized."""
         try:
             # Check that we have the expected number of apps
-            # Core (2) + communication (2) + org (2) + shopping + cab + apartment + note + reminder = 11
-            expected_app_count = 11
+            # Core (2) + files/album (2) + communication (2) + org (2) + shopping + cab + apartment + note + reminder = 13
+            expected_app_count = 13
             actual_app_count = len(self.apps)
 
             if actual_app_count != expected_app_count:
@@ -122,6 +133,8 @@ class ScenarioWithAllPAREApps(PAREScenario):
             required_apps = {
                 "PAREAgentUserInterface",
                 "HomeScreenSystemApp",
+                "SandboxLocalFileSystem",
+                "StatefulAlbumApp",
                 "StatefulEmailApp",
                 "StatefulMessagingApp",
                 "StatefulCalendarApp",

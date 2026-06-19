@@ -17,6 +17,8 @@ downloads/
 eggs/
 .eggs/
 lib/
+!pare/scenarios/multimodal_benchmark/lib/
+!pare/scenarios/multimodal_benchmark/lib/*.py
 lib64/
 parts/
 sdist/

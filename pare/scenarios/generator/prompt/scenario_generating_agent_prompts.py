@@ -31,6 +31,8 @@ META_ARE_APPS_DIR = _discover_meta_are_apps_dir()
 META_ARE_APPS_DIR_DISPLAY = str(META_ARE_APPS_DIR) if META_ARE_APPS_DIR is not None else "(not found on disk)"
 SCENARIOS_DIR = PARE_DIR / "scenarios" / "benchmark"
 SCENARIOS_DIR_DISPLAY = str(SCENARIOS_DIR)
+MULTIMODAL_SCENARIOS_DIR = PARE_DIR / "scenarios" / "multimodal_benchmark"
+MULTIMODAL_SCENARIOS_DIR_DISPLAY = str(MULTIMODAL_SCENARIOS_DIR)
 
 PROJECT_CONTEXT_SUMMARY = textwrap.dedent(
     f"""\
@@ -41,6 +43,7 @@ PROJECT_CONTEXT_SUMMARY = textwrap.dedent(
     - PARE app implementations are available under: {PARE_APPS_DIR}
     - Meta-ARE app implementations are available under: {META_ARE_APPS_DIR_DISPLAY}
     - Existing PARE user scenarios live under: {SCENARIOS_DIR_DISPLAY}
+    - Multimodal reference scenarios live under: {MULTIMODAL_SCENARIOS_DIR_DISPLAY}
     - Only design scenarios that use apps actually present in the PARE apps directory, even if Meta-ARE exposes additional base apps.
     """
 ).strip()
@@ -57,6 +60,7 @@ PROJECT_CONTEXT_SUMMARY = (
     - PARE app implementations are available under: {pas_apps_dir}
     - Meta-ARE app implementations are available under: {meta_are_apps_dir}
     - Existing PARE user scenarios live under: {scenarios_dir}
+    - Multimodal reference scenarios live under: {multimodal_scenarios_dir}
     - Only design scenarios that use apps actually present in the PARE apps directory, even if Meta-ARE exposes additional base apps.
     """
     )
@@ -64,6 +68,7 @@ PROJECT_CONTEXT_SUMMARY = (
         pas_apps_dir=str(PARE_APPS_DIR),
         meta_are_apps_dir=META_ARE_APPS_DIR_DISPLAY,
         scenarios_dir=SCENARIOS_DIR_DISPLAY,
+        multimodal_scenarios_dir=MULTIMODAL_SCENARIOS_DIR_DISPLAY,
     )
     .strip()
 )
@@ -80,9 +85,10 @@ GLOBAL_CONTEXT_PROMPT = textwrap.dedent(
     ## Workflow Contract
     1. **Step 0 - Uniqueness**: compare against historical descriptions before proposing anything new.
     2. **Step 1 - Narrative**: produce 2-3 paragraphs summarizing the trigger, agent inference, and expected acceptance.
-    3. **Step 2 - Apps & Data**: seed `init_and_populate_apps()` without touching other sections; only pre-existing state belongs here.
-    4. **Step 3 - Events Flow**: fully implement `build_events_flow()` with environment + oracle events, using `EventRegisterer.capture_mode()`.
-    5. **Step 4 - Validation**: finish `validate()` with log checks that prove the agent offered help and completed the task.
+    3. **Step 1.5 - Visual Assets**: produce a `VisualAssetSpec`/`assets.json` plan for every image that must be visible to the agent.
+    4. **Step 2 - Apps & Data**: seed `init_and_populate_apps()` without touching other sections; only pre-existing state belongs here.
+    5. **Step 3 - Events Flow**: fully implement `build_events_flow()` with environment + oracle events, using `EventRegisterer.capture_mode()`.
+    6. **Step 4 - Validation**: finish `validate()` with log checks that prove the agent inspected visual evidence, offered help, and completed the task.
 
     ## Temporal & Data Alignment
     - Always set `start_time` to a realistic UTC timestamp that matches emails, messages, and calendar entries.
@@ -95,9 +101,19 @@ GLOBAL_CONTEXT_PROMPT = textwrap.dedent(
     - Use `send_email_to_user_with_id()` when later oracle actions need the same `email_id`.
     - Chain events with `.delayed()` or `.depends_on()` to model realistic timing and user acceptances.
 
+    ## Multimodal Override
+    This generator now targets multimodal PARE scenarios by default. Every scenario should include visual evidence that is actually inspectable by the agent:
+    - Use local/provided image assets through a manifest-backed `VisualAssetSpec` and resolved sandbox paths.
+    - Prefer `SandboxLocalFileSystem.display(...)`, Email image attachments, or `StatefulAlbumApp.view_photo(...)` as the image-byte access path.
+    - Do not embed raw image bytes in generated Python; load/copy assets from manifest paths.
+    - Use deterministic/local assets for text-heavy images; do not assume a text-only LLM creates image bytes.
+    - Validation must fail if the final action can succeed without an agent image-inspection event.
+
     ## Reference Scenarios (use the Read tool)
     Before writing or editing scenario code, use the Read tool to open 1-2 representative scenarios under:
-    {SCENARIOS_DIR_DISPLAY}
+    {MULTIMODAL_SCENARIOS_DIR_DISPLAY}
+    Suggested references: `rice_cooker_photo_cart_suggestion.py`, `friend_bird_photos_album_share.py`,
+    `bill_screenshot_payment_reminder_suggestion.py`, and `movie_poster_showtime_booking_suggestion.py`.
     Use them only as stylistic references; do not copy their scenario narrative or event flow verbatim.
 
     ## Dynamic Context Blocks
@@ -119,7 +135,17 @@ APP_INITIALIZATION_SNIPPETS = {
     "StatefulEmailApp": {
         "init": 'self.email = StatefulEmailApp(name="Emails")',
         "flow": 'email_app = self.get_typed_app(StatefulEmailApp, "Emails")',
-        "intent": "Stateful email client for reading threads, replying, and drafting proactive responses.",
+        "intent": "Stateful email client for reading threads, attachments, replying, and drafting proactive responses.",
+    },
+    "SandboxLocalFileSystem": {
+        "init": 'self.files = SandboxLocalFileSystem(name="Files")',
+        "flow": 'files_app = self.get_typed_app(SandboxLocalFileSystem, "Files")',
+        "intent": "Sandbox file system for seeded image assets; use display(path) to expose image bytes to the agent.",
+    },
+    "StatefulAlbumApp": {
+        "init": 'self.album = StatefulAlbumApp(name="Album")',
+        "flow": 'album_app = self.get_typed_app(StatefulAlbumApp, "Album")',
+        "intent": "Photo library for metadata search plus view_photo(photo_id) visual inspection.",
     },
     "StatefulCalendarApp": {
         "init": 'self.calendar = StatefulCalendarApp(name="Calendar")',
@@ -172,6 +198,12 @@ APP_IMPORT_INSTRUCTIONS = {
     },
     "StatefulEmailApp": {
         "import instruction": "from pare.apps import StatefulEmailApp",
+    },
+    "SandboxLocalFileSystem": {
+        "import instruction": "from are.simulation.apps import SandboxLocalFileSystem",
+    },
+    "StatefulAlbumApp": {
+        "import instruction": "from pare.apps import StatefulAlbumApp",
     },
     "StatefulCalendarApp": {
         "import instruction": "from pare.apps import StatefulCalendarApp",
@@ -253,11 +285,12 @@ _SCENARIO_DESCRIPTION_BODY = textwrap.dedent(
     - A concise, ecologically grounded **narrative description** that:
       - Focuses on ONE clear, primary coordination/assistive challenge for the proactive agent (do not try to cover multiple unrelated subplots).
       - Explains the user's context, pain point, and why the proactive assistant should intervene.
-      - Describes what information arrives through PARE apps and when, at a similar level of detail and brevity as the existing reference scenarios under `pare/scenarios/benchmark/`.
+      - Describes what information arrives through PARE apps and when, at a similar level of detail and brevity as the existing multimodal reference scenarios under `pare/scenarios/multimodal_benchmark/`.
+      - Specifies what visual evidence exists, how the user/agent can access it, what inference requires vision, and which action depends on that visual inference.
       - Outlines the agent's proactive inference, proposed assistance, and expected user response without unnecessary digressions.
-      - Follows the docstring structure of the existing PARE scenarios (e.g. `calendar_conflict_urgent_reschedule.py`, `contact_update_from_new_number.py`):
-        * First line: one-sentence summary of what the agent does (e.g. "Agent updates contact information from messages received from unknown number.").
-        * Middle: 1-2 short paragraphs describing the concrete situation and numbered steps the agent must perform.
+      - Follows the docstring structure of the existing multimodal PARE scenarios (e.g. `rice_cooker_photo_cart_suggestion.py`, `friend_bird_photos_album_share.py`):
+        * First line: one-sentence summary of the visually grounded help the agent provides.
+        * Middle: 1-2 short paragraphs describing the concrete visual artifact, access path, and numbered steps the agent must perform.
         * Final lines: a brief paragraph starting with "This scenario exercises ..." that lists the main capabilities being tested.
       - Is implementable without "magic knowledge":
         * Do NOT rely on internal IDs/handles (e.g., `email_id`, `product_id`, `order_id`, `conversation_id`, `calendar_event_id`, `reminder_id`, `item_id` and similar handles) that the agent could not plausibly know.
@@ -317,6 +350,12 @@ _SCENARIO_DESCRIPTION_BODY = textwrap.dedent(
       - Do NOT rely on the agent to "guess what to do" from vague notifications; make the needed details observable via env event content and/or
         a follow-up oracle read/search/get step in Step 3.
 
+    Multimodal evidence rule (CRITICAL):
+    - Every scenario MUST include at least one image asset represented later as a `VisualAssetSpec`.
+    - The narrative MUST say whether the image is delivered as an email attachment, seeded in `SandboxLocalFileSystem`, or registered in `StatefulAlbumApp`.
+    - A visually grounded action (shopping search, reminder creation, message/email reply, booking plan, etc.) MUST depend on content that cannot be known from filename or text metadata alone.
+    - Keep text-heavy visual facts limited unless they are supplied by deterministic/local assets. Do not ask the generator to invent reliable receipt/bill text through a text-only model.
+
     Constraints:
     - Treat every historical scenario description in the provided scenario metadata file as a negative example.
     - Your new scenario MUST be clearly and substantively different in trigger, domain, app combination, and cross-app workflow from all prior descriptions.
@@ -340,11 +379,11 @@ _SCENARIO_DESCRIPTION_BODY = textwrap.dedent(
       - When repetition would normally be required just to resolve handles (IDs), prefer making the trigger/env cue provide explicit identifiers or
         concrete disambiguating details (IDs, exact titles, sender+subject, etc.) so the agent does not need extra "find each item" oracle loops.
         This keeps the scenario focused on reasoning + coordination rather than boilerplate.
-    - Attachment handling (IMPORTANT; keep scenarios lightweight):
-      - When a workflow involves attachments (Notes attachments or email attachments), you do NOT need to create real files on disk for scenarios.
-      - Prefer treating attachments as **placeholder file paths** (strings) that represent documents (e.g., `"/files/Q1_Budget.xlsx"`), and pass those
-        paths through tool arguments (such as note/email attachment parameters) as needed.
-      - Validation should focus on correctness of the referenced filenames/paths (stable tokens), not the actual file contents.
+    - Attachment handling (IMPORTANT for multimodal scenarios):
+      - When a workflow involves image attachments, use real local image files resolved from an asset manifest.
+      - Prefer stable sandbox paths such as `"/photo.jpg"` or `"/assets/rice_cooker.jpg"` and pass those paths through Email, Files, or Album APIs.
+      - Do NOT embed image bytes directly in the generated scenario source; read bytes from the resolved local path and write them into `SandboxLocalFileSystem`.
+      - Validation should check both the final side effect and an agent image-inspection event such as `display(...)`, `view_photo(...)`, or an email read returning image attachments.
     - Only involve apps and tools that appear in the Selected Apps list (included below) and the Event-Registered App APIs block below.
     - Do NOT introduce new app types or tools that are not present in those context sections.
     - App coverage requirement (CRITICAL):
@@ -361,7 +400,7 @@ _SCENARIO_DESCRIPTION_BODY = textwrap.dedent(
       - Valid Python identifier in PascalCase (e.g., `VipCalendarConflict`).
       - Starts with a letter; contains only letters and digits; no underscores or spaces.
     - Complexity and style:
-      - Aim for the same level of complexity and conciseness as the hand-written PARE scenarios in `pare/scenarios/benchmark/` (for example, `calendar_conflict_urgent_reschedule.py`).
+      - Aim for the same level of complexity and conciseness as the hand-written multimodal PARE scenarios in `pare/scenarios/multimodal_benchmark/` (for example, `rice_cooker_photo_cart_suggestion.py`).
       - Avoid redundant background details that do not affect the agent's reasoning or the event flow.
       - Keep the description tightly centered on the single main coordination problem and how PARE apps + the agent resolve it.
 
@@ -428,6 +467,40 @@ _SCENARIO_UNIQUENESS_BODY = textwrap.dedent(
     """
 )
 
+_ASSET_PLANNING_BODY = textwrap.dedent(
+    """\
+    You are the Step 1.5 Visual Asset Planning Agent.
+    Convert the approved narrative into a concrete local-asset plan for multimodal scenario generation.
+
+    Output ONLY JSON with this shape:
+    {
+      "assets": [
+        {
+          "asset_id": "rice_cooker_photo",
+          "filename": "rice_cooker.jpg",
+          "source_path": "path/from/asset/library/rice_cooker.jpg",
+          "sandbox_path": "/photo.jpg",
+          "delivery": "email_attachment",
+          "visual_requirements": ["compact white rice cooker"],
+          "text_requirements": [],
+          "ground_truth": {
+            "object": "rice cooker"
+          }
+        }
+      ]
+    }
+
+    Rules:
+    - Include one `VisualAssetSpec` object for every image that must be visible to the agent.
+    - Use local/provided assets only. Do not request image generation from the text/code model.
+    - `source_path` may be a placeholder if no manifest has been supplied yet, but `filename`, `sandbox_path`, `delivery`,
+      `visual_requirements`, and `ground_truth` must be concrete enough for a local `AssetProvider`.
+    - Use delivery values such as `email_attachment`, `album_photo`, or `files_display`.
+    - Ground truth must contain the visual facts the validation will rely on.
+    - Keep text-heavy requirements explicit; if exact text/numbers matter, say that the asset must be deterministic/user-provided.
+    """
+)
+
 _APPS_AND_DATA_BODY = textwrap.dedent(
     """\
     You are the Step 2 Apps & Data Setup Agent.
@@ -435,6 +508,12 @@ _APPS_AND_DATA_BODY = textwrap.dedent(
     - Only include pre-existing data (contacts, calendar events, message history, etc.).
     - Structure the output per app with clear subsections.
     - Do NOT invent runtime events; those belong to Step 3.
+    - For multimodal assets:
+      - initialize `SandboxLocalFileSystem` whenever images are needed;
+      - connect `StatefulEmailApp.internal_fs` and `StatefulAlbumApp.internal_fs` to that filesystem when used;
+      - load local image bytes from manifest/resolved paths and write them into stable sandbox paths;
+      - avoid embedding raw image bytes directly in scenario code;
+      - register all apps needed for visual access (`SandboxLocalFileSystem`, `StatefulEmailApp`, `StatefulAlbumApp`, etc.).
     - Triggering artifacts vs baseline state (IMPORTANT):
       - If an email/message/notification is meant to *trigger* the agent during the run (i.e., the agent should notice it arriving),
         prefer creating it as an EARLY non-oracle environment event in Step 3 (e.g., `send_email_to_user_with_id(...).delayed(...)`)
@@ -520,6 +599,12 @@ _EVENTS_FLOW_BODY = textwrap.dedent(
       - Keep scenarios fast: ALL `.delayed(...)` values and all `.depends_on(..., delay_seconds=...)` values MUST be <= 30 seconds.
       - Do NOT model hours/minutes inside delays (e.g., do not use 3600, 10800, etc.). Use short delays to preserve ordering only.
     - Include oracle/user interactions (agent proposal → user response → agent follow-up).
+    - REQUIRED (visual grounding for multimodal scenarios):
+      - Include an explicit agent-visible image inspection step before any proposal or write action that depends on image content.
+      - Use real tools from the context, such as `get_email_by_id(...)` for an image attachment, `SandboxLocalFileSystem.display(...)`,
+        or `StatefulAlbumApp.view_photo(...)`.
+      - Do not let the agent infer visual facts from filenames, comments, seeded variables, or ground-truth metadata.
+      - The proposal content should cite the visual evidence only after an image-inspection event has happened.
     - REQUIRED (write actions must be user-gated; CRITICAL):
       - Any WRITE / state-changing tool call (examples: add/edit/delete reminders, send/reply/forward emails, send messages to third parties,
         create/update notes or add note attachments, book/cancel rides, save/delete/update apartments, cancel/checkout orders, edit calendar events)
@@ -637,9 +722,9 @@ _EVENTS_FLOW_BODY = textwrap.dedent(
 
     Explicit oracle events for agent behavior (IMPORTANT):
     - For every major agent behavior that you expect Step 4 to validate (for example: sending a proposal to the user, searching the calendar, updating a contact, sending a reply email, adding a reminder), you MUST create a concrete oracle event in `build_events_flow()`.
-      - Follow the patterns used in the hand-written scenarios under `pare/scenarios/benchmark/`, such as:
-        - `calendar_conflict_urgent_reschedule.py` (explicit `get_calendar_events_from_to`, `edit_calendar_event`, `add_calendar_event`, `reply_to_email` calls, each with `.oracle().depends_on(...)`).
-        - `contact_update_from_new_number.py` (explicit `search_contacts`, `edit_contact`, `send_message` calls with `.oracle().depends_on(...)`).
+      - Follow the patterns used in the hand-written multimodal scenarios under `pare/scenarios/multimodal_benchmark/`, such as:
+        - `rice_cooker_photo_cart_suggestion.py` (email attachment read, image display/inspection, shopping lookup, user-gated cart write).
+        - `friend_bird_photos_album_share.py` (Album metadata search, `view_photo(...)` inspection, user-gated sharing action).
     - Do NOT rely on "implicit" agent behavior that you only describe in comments. If a behavior matters for validation, represent it as an actual oracle event by calling the appropriate PARE app tools, chaining them with `.oracle()` / `.depends_on(...)`, and registering them in `self.events`.
 
     Mandatory API verification (applies to ALL apps, now and in the future):
@@ -706,6 +791,10 @@ _VALIDATION_BODY = textwrap.dedent(
     """\
     You are the Step 4 validation agent.
     Design the checks for `validate()` that prove the proactive agent detected the right signals and executed the promised help.
+    - Multimodal scenarios MUST include a strict image inspection check before accepting the final side effect.
+      Use the helper `log_has_agent_image_view(...)` or equivalent event-log logic to prove the agent called an image-observation tool
+      such as `SandboxLocalFileSystem.display(...)`, `StatefulAlbumApp.view_photo(...)`, or an email read that returned image attachments.
+    - Import `log_has_agent_image_view` from `pare.scenarios.multimodal_benchmark.lib.agent_image_view_log` when a scenario relies on visual evidence.
     - Validation MUST be based only on agent/oracle behavior recorded as `EventType.AGENT` entries.
       - Do NOT include any checks that require `EventType.ENV` events to appear in the log; treat them as background context only.
       - When iterating over log entries, always filter to `e.event_type == EventType.AGENT` before applying detailed checks.
@@ -781,7 +870,8 @@ def configure_dynamic_context(
         SCENARIO_UNIQUENESS_SYSTEM_PROMPT, \
         APPS_AND_DATA_SYSTEM_PROMPT, \
         EVENTS_FLOW_SYSTEM_PROMPT, \
-        VALIDATION_SYSTEM_PROMPT
+        VALIDATION_SYSTEM_PROMPT, \
+        ASSET_PLANNING_SYSTEM_PROMPT
 
     def _make_block(title: str, content: str) -> str:
         content = content.strip()
@@ -804,6 +894,11 @@ def configure_dynamic_context(
         include_selected_tools=True,
     )
     SCENARIO_UNIQUENESS_SYSTEM_PROMPT = _with_context(_SCENARIO_UNIQUENESS_BODY)
+    ASSET_PLANNING_SYSTEM_PROMPT = _with_context(
+        _ASSET_PLANNING_BODY,
+        include_selected=True,
+        include_app_init=True,
+    )
     APPS_AND_DATA_SYSTEM_PROMPT = _with_context(
         _APPS_AND_DATA_BODY,
         include_imports=True,
@@ -873,9 +968,11 @@ SCENARIO_DESCRIPTION_USER_PROMPT = textwrap.dedent(
 
     Stylistic reference (docstring pattern ONLY, not scenario content):
     - Use the Read tool to open the following existing user scenarios and observe how their docstrings are structured:
-      - `pare/scenarios/benchmark/contact_update_from_new_number.py`
-      - `pare/scenarios/benchmark/calendar_conflict_urgent_reschedule.py`
-    - Follow their docstring pattern (high-level summary line, concrete context + numbered steps, final "This scenario exercises ..." paragraph),
+      - `pare/scenarios/multimodal_benchmark/rice_cooker_photo_cart_suggestion.py`
+      - `pare/scenarios/multimodal_benchmark/friend_bird_photos_album_share.py`
+      - `pare/scenarios/multimodal_benchmark/bill_screenshot_payment_reminder_suggestion.py`
+      - `pare/scenarios/multimodal_benchmark/movie_poster_showtime_booking_suggestion.py`
+    - Follow their multimodal docstring pattern (visual evidence, concrete access path, numbered steps, visual inference, user-gated action),
       but you MUST design a completely new scenario with different triggers, goals, and app usage.
 
     Then choose:
@@ -910,6 +1007,23 @@ SCENARIO_UNIQUENESS_USER_PROMPT = textwrap.dedent(
 
     Historical scenario metadata path (read this file via the Read tool):
     {scenario_metadata_path}
+    """
+)
+
+ASSET_PLANNING_SYSTEM_PROMPT = _with_context(
+    _ASSET_PLANNING_BODY,
+    include_selected=True,
+    include_app_init=True,
+)
+
+ASSET_PLANNING_USER_PROMPT = textwrap.dedent(
+    """\
+    Narrative:
+    ---
+    {scenario_description}
+    ---
+
+    Write the multimodal asset plan as strict JSON for `assets.json`.
     """
 )
 

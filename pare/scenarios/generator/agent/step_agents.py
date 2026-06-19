@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from pare.scenarios.generator.prompt.scenario_generating_agent_prompts import (
     APPS_AND_DATA_USER_PROMPT,
+    ASSET_PLANNING_USER_PROMPT,
     EVENTS_FLOW_USER_PROMPT,
     SCENARIO_DESCRIPTION_USER_PROMPT,
     VALIDATION_USER_PROMPT,
@@ -217,6 +218,7 @@ class StepEditAgent(BaseStepAgent):
         scenario_file_path: str | None = None,
         apps_and_data: str | None = None,
         events_flow: str | None = None,
+        asset_plan: str | None = None,
         check_callback: Callable[[str, int], tuple[bool, str]] | None = None,
     ) -> StepResult:
         """Dispatch to the appropriate per-step prompt builder."""
@@ -232,8 +234,13 @@ class StepEditAgent(BaseStepAgent):
                 raise StepExecutionError(
                     "Apps & Data step requires scenario_description and scenario_file_path.",
                 )
+            scenario_description_with_assets = scenario_description
+            if asset_plan:
+                scenario_description_with_assets = (
+                    f"{scenario_description}\n\nVisual asset plan:\n---\n{asset_plan}\n---"
+                )
             user_prompt = APPS_AND_DATA_USER_PROMPT.format(
-                scenario_description=scenario_description,
+                scenario_description=scenario_description_with_assets,
                 scenario_file_path=scenario_file_path,
             )
 
@@ -244,13 +251,26 @@ class StepEditAgent(BaseStepAgent):
                     "# (LLM call skipped)"
                 )
 
+        elif self.step_kind == "asset_planning":
+            if scenario_description is None:
+                raise StepExecutionError("Asset Planning step requires scenario_description.")
+            user_prompt = ASSET_PLANNING_USER_PROMPT.format(scenario_description=scenario_description)
+
+            def debug_builder(_: str) -> str:
+                return '{"assets": []}'
+
         elif self.step_kind == "events_flow":
             if scenario_description is None or apps_and_data is None or scenario_file_path is None:
                 raise StepExecutionError(
                     "Events Flow step requires scenario_description, apps_and_data, and scenario_file_path.",
                 )
+            scenario_description_with_assets = scenario_description
+            if asset_plan:
+                scenario_description_with_assets = (
+                    f"{scenario_description}\n\nVisual asset plan:\n---\n{asset_plan}\n---"
+                )
             user_prompt = EVENTS_FLOW_USER_PROMPT.format(
-                scenario_description=scenario_description,
+                scenario_description=scenario_description_with_assets,
                 apps_and_data=apps_and_data,
                 scenario_file_path=scenario_file_path,
             )

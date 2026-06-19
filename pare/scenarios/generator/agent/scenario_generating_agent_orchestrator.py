@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 from pare.benchmark.scenario_loader import load_scenarios_from_registry
 from pare.multi_scenario_runner import MultiScenarioRunner
 from pare.scenarios.config import MultiScenarioRunnerConfig
+from pare.scenarios.generator.assets import LocalAssetProvider, VisualQA
 from pare.scenarios.generator.prompt import scenario_generating_agent_prompts as prompt_module
 from pare.scenarios.generator.prompt.scenario_generating_agent_prompts import (
     configure_dynamic_context,
@@ -58,6 +59,8 @@ class ScenarioGeneratingAgentOrchestrator:
         debug_prompts: bool = False,
         resume_from_step2: bool = False,
         resume_from_step: str | None = None,
+        asset_manifest_path: str | Path | None = None,
+        asset_dir: str | Path | None = None,
         claude_filesystem_config: ClaudeFilesystemConfig | None = None,
     ) -> None:
         """Initialize the orchestrator and supporting step agents."""
@@ -108,16 +111,18 @@ class ScenarioGeneratingAgentOrchestrator:
         # remains read-only for reference.
         self.scenario_file = self.seed_scenarios_dir / "editable_seed_scenario.py"
 
-        # Global scenario metadata used for uniqueness checks and analysis.
-        # Stored under `pare/scenarios/scenario_metadata.json` so it is shared
-        # across runs and not tied to a particular output directory.
-        self.scenario_metadata_path = self.repo_root / "scenarios" / "scenario_metadata.json"
+        # Multimodal scenario metadata used for uniqueness checks and analysis.
+        # The generator override targets multimodal scenarios, so compare against
+        # the multimodal benchmark corpus rather than the older text-only metadata.
+        self.scenario_metadata_path = self.repo_root / "scenarios" / "multimodal_scenario_metadata.json"
 
         # Dynamic prompt context (selected apps/tools) for this run.
         # IMPORTANT: must be set before any helper that reads `_prompt_context`.
         self._prompt_context: dict[str, str] = prompt_context or {}
 
         self._last_check_result: RunCheckResult | None = None
+        self.asset_manifest_path = Path(asset_manifest_path) if asset_manifest_path is not None else None
+        self.asset_dir = Path(asset_dir) if asset_dir is not None else self.output_dir / "assets"
         # Declarative filesystem policy for Claude Agent SDK usage. Enforcement
         # will be wired via hooks and tool options in a follow-up change.
         if claude_filesystem_config is None:
@@ -201,6 +206,14 @@ class ScenarioGeneratingAgentOrchestrator:
             system_prompt=prompt_module.SCENARIO_DESCRIPTION_SYSTEM_PROMPT,
             max_iterations=max_iterations,
             uniqueness_agent=self.uniqueness_agent,
+            debug_prompts=debug_prompts,
+            claude_runtime_config=self._claude_config_step1,
+        )
+        self.asset_planning_agent = StepEditAgent(
+            step_name="Step 1.5: Visual Asset Plan",
+            step_kind="asset_planning",
+            system_prompt=prompt_module.ASSET_PLANNING_SYSTEM_PROMPT,
+            max_iterations=max_iterations,
             debug_prompts=debug_prompts,
             claude_runtime_config=self._claude_config_step1,
         )
@@ -389,6 +402,33 @@ class ScenarioGeneratingAgentOrchestrator:
                         # can inspect the early state if Step 2 fails.
                         self._snapshot_scenario("step1")
 
+            # Step 1.5: Visual Asset Planning
+            asset_plan_path = self.output_dir / "assets.json"
+            if resume_mode in {"step2", "step3", "step4"} and asset_plan_path.exists():
+                asset_plan_content = self._safe_read_text(asset_plan_path)
+                asset_plan = StepResult(
+                    name="Step 1.5: Visual Asset Plan (resumed)",
+                    content=asset_plan_content,
+                    iterations=0,
+                    notes={"resumed_from_disk": True},
+                    conversation=[],
+                )
+            else:
+                asset_plan = self.asset_planning_agent.run(scenario_description=step1.content)
+                asset_plan_content = asset_plan.content
+                if not self.debug_prompts:
+                    self._write_output(
+                        content=asset_plan_content,
+                        path=asset_plan_path,
+                        header="Step 1.5: Visual Asset Plan",
+                        append=False,
+                        include_header=False,
+                    )
+                    self._append_step_trajectory("step1_5_assets", asset_plan)
+            resolved_assets_context = self._resolve_asset_manifest_if_available()
+            if resolved_assets_context:
+                asset_plan_content = f"{asset_plan_content}\n\n{resolved_assets_context}"
+
             # Step 2: Apps & Data Setup
             if resume_mode in {"step3", "step4"} and not self.debug_prompts:
                 logger.info("Resuming from %s: skipping Step 2 generation.", resume_mode)
@@ -428,6 +468,7 @@ class ScenarioGeneratingAgentOrchestrator:
 
                 step2 = self.step2_agent.run(
                     scenario_description=step1.content,
+                    asset_plan=asset_plan_content,
                     scenario_file_path=str(self.scenario_file),
                     check_callback=check2,
                 )
@@ -478,6 +519,7 @@ class ScenarioGeneratingAgentOrchestrator:
 
                 step3 = self.step3_agent.run(
                     scenario_description=step1.content,
+                    asset_plan=asset_plan_content,
                     apps_and_data=step2.content,
                     scenario_file_path=str(self.scenario_file),
                     check_callback=check3,
@@ -534,6 +576,7 @@ class ScenarioGeneratingAgentOrchestrator:
                 "trajectory_dir": str(self.trajectory_dir),
                 "steps": [
                     step1,
+                    asset_plan,
                     step2,
                     step3,
                     step4,
@@ -578,6 +621,25 @@ class ScenarioGeneratingAgentOrchestrator:
             )
             return None, self._historical_descriptions
         return filtered_path, filtered
+
+    def _resolve_asset_manifest_if_available(self) -> str:
+        """Resolve local multimodal assets when the caller provided a manifest."""
+        if self.asset_manifest_path is None:
+            return ""
+        provider = LocalAssetProvider(manifest_path=self.asset_manifest_path, output_dir=self.asset_dir)
+        resolved_assets = provider.resolve_assets()
+        qa_result = VisualQA().check(resolved_assets)
+        record = {
+            "manifest_path": str(self.asset_manifest_path),
+            "asset_dir": str(self.asset_dir),
+            "assets": [asdict(asset) for asset in resolved_assets],
+            "visual_qa": asdict(qa_result),
+        }
+        manifest_out = self.trajectory_dir / "resolved_assets.json"
+        manifest_out.write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
+        if not qa_result.passed:
+            raise RuntimeError("Visual asset QA failed: " + "; ".join(qa_result.errors))
+        return "Resolved visual assets:\n" + json.dumps(record, indent=2, default=str)
 
     def _parse_selected_apps_from_prompt_context(self) -> set[str]:
         """Parse selected app class names from the provided dynamic prompt context."""

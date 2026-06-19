@@ -1,0 +1,142 @@
+"""Asset helpers for multimodal scenario generation."""
+
+from __future__ import annotations
+
+import json
+import shutil
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+_SUPPORTED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp", "heic", "bmp"}
+
+
+@dataclass(frozen=True)
+class VisualAssetSpec:
+    """Structured description of an image asset required by a scenario."""
+
+    asset_id: str
+    filename: str
+    source_path: Path
+    sandbox_path: str
+    delivery: str
+    ground_truth: dict[str, Any] = field(default_factory=dict)
+    visual_requirements: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any], *, base_dir: Path | None = None) -> VisualAssetSpec:
+        """Create a spec from a manifest object."""
+        source_raw = raw.get("source_path")
+        if not source_raw:
+            raise ValueError("Asset is missing required field: source_path")
+        source_path = Path(str(source_raw))
+        if base_dir is not None and not source_path.is_absolute():
+            source_path = base_dir / source_path
+
+        asset_id = str(raw.get("asset_id") or "").strip()
+        filename = str(raw.get("filename") or source_path.name).strip()
+        sandbox_path = str(raw.get("sandbox_path") or f"/{filename}").strip()
+        delivery = str(raw.get("delivery") or "files_display").strip()
+        if not asset_id:
+            raise ValueError("Asset is missing required field: asset_id")
+        if not filename:
+            raise ValueError(f"Asset {asset_id} is missing a filename")
+        if not sandbox_path.startswith("/"):
+            sandbox_path = f"/{sandbox_path}"
+
+        visual_requirements = raw.get("visual_requirements") or []
+        if not isinstance(visual_requirements, list):
+            visual_requirements = [str(visual_requirements)]
+        ground_truth = raw.get("ground_truth") or {}
+        if not isinstance(ground_truth, dict):
+            raise TypeError(f"Asset {asset_id} ground_truth must be an object")
+
+        return cls(
+            asset_id=asset_id,
+            filename=filename,
+            source_path=source_path,
+            sandbox_path=sandbox_path,
+            delivery=delivery,
+            ground_truth=ground_truth,
+            visual_requirements=[str(item) for item in visual_requirements],
+        )
+
+
+@dataclass(frozen=True)
+class ResolvedVisualAsset(VisualAssetSpec):
+    """A visual asset after it has been resolved to a concrete local file."""
+
+    resolved_path: Path = Path()
+
+
+@dataclass(frozen=True)
+class VisualQAResult:
+    """Result of lightweight asset validation."""
+
+    passed: bool
+    errors: list[str]
+
+
+class LocalAssetProvider:
+    """Resolve visual assets from a local manifest into a scenario asset directory."""
+
+    def __init__(self, *, manifest_path: str | Path, output_dir: str | Path) -> None:
+        """Configure manifest and output paths."""
+        self.manifest_path = Path(manifest_path)
+        self.output_dir = Path(output_dir)
+
+    def load_specs(self) -> list[VisualAssetSpec]:
+        """Load visual asset specs from the configured manifest."""
+        data = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        raw_assets = data.get("assets") if isinstance(data, dict) else data
+        if not isinstance(raw_assets, list):
+            raise TypeError("Asset manifest must be a list or an object with an 'assets' list")
+        return [
+            VisualAssetSpec.from_dict(raw, base_dir=self.manifest_path.parent)
+            for raw in raw_assets
+            if isinstance(raw, dict)
+        ]
+
+    def resolve_assets(self) -> list[ResolvedVisualAsset]:
+        """Copy all manifest assets into the output directory and return resolved specs."""
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        resolved: list[ResolvedVisualAsset] = []
+        for spec in self.load_specs():
+            if not spec.source_path.exists():
+                raise FileNotFoundError(f"Asset source not found for {spec.asset_id}: {spec.source_path}")
+            target = self.output_dir / spec.filename
+            if spec.source_path.resolve() != target.resolve():
+                shutil.copy2(spec.source_path, target)
+            resolved.append(
+                ResolvedVisualAsset(
+                    asset_id=spec.asset_id,
+                    filename=spec.filename,
+                    source_path=spec.source_path,
+                    sandbox_path=spec.sandbox_path,
+                    delivery=spec.delivery,
+                    ground_truth=spec.ground_truth,
+                    visual_requirements=spec.visual_requirements,
+                    resolved_path=target,
+                )
+            )
+        return resolved
+
+
+class VisualQA:
+    """Lightweight deterministic checks for resolved visual assets."""
+
+    def check(self, assets: list[ResolvedVisualAsset]) -> VisualQAResult:
+        """Validate files, supported extensions, and ground-truth metadata."""
+        errors: list[str] = []
+        for asset in assets:
+            if not asset.resolved_path.exists():
+                errors.append(f"{asset.asset_id}: resolved file does not exist: {asset.resolved_path}")
+                continue
+            ext = asset.resolved_path.suffix.lower().lstrip(".")
+            if ext not in _SUPPORTED_IMAGE_EXTENSIONS:
+                errors.append(f"{asset.asset_id}: unsupported image extension: {asset.resolved_path.suffix}")
+            if not asset.ground_truth:
+                errors.append(f"{asset.asset_id}: ground_truth is required")
+            if not asset.sandbox_path.startswith("/"):
+                errors.append(f"{asset.asset_id}: sandbox_path must be absolute")
+        return VisualQAResult(passed=not errors, errors=errors)
