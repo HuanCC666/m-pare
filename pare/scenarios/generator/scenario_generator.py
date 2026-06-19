@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import inspect
 import logging
+import os
 from collections.abc import Iterable  # noqa: TC003
 from importlib import import_module
 from pathlib import Path
@@ -19,6 +20,7 @@ from pare.apps.notification_templates import NOTIFICATION_TEMPLATES
 from pare.scenarios.generator.agent.scenario_generating_agent_orchestrator import (
     ScenarioGeneratingAgentOrchestrator,
 )
+from pare.scenarios.generator.assets import DEFAULT_IMAGE_GENERATION_MODEL
 from pare.scenarios.generator.prompt.scenario_generating_agent_prompts import (
     APP_IMPORT_INSTRUCTIONS,
     build_app_initialization_block,
@@ -92,6 +94,19 @@ def determine_selected_apps(app_instances: dict[str, object], requested: Iterabl
     if invalid:
         logging.warning("Ignoring unknown apps: %s (available: %s)", ", ".join(invalid), ", ".join(available))
     return valid or available
+
+
+def validate_asset_provider_args(args: argparse.Namespace) -> None:
+    """Validate asset-provider CLI combinations before generation starts."""
+    if args.asset_provider == "local":
+        if args.asset_manifest_path is None:
+            raise ValueError("--asset-manifest is required when --asset-provider local")
+        return
+    if args.asset_provider == "openai-image":
+        if not os.environ.get("OPENAI_API_KEY"):
+            raise ValueError("--asset-provider openai-image requires OPENAI_API_KEY")
+        return
+    raise ValueError(f"Unsupported asset provider: {args.asset_provider}")
 
 
 def build_tool_descriptions(app_def_scenario: object, target_apps: list[str]) -> str:
@@ -723,11 +738,31 @@ def main() -> None:
         help="Optional local JSON manifest of image assets to resolve for multimodal scenarios.",
     )
     parser.add_argument(
+        "--asset-provider",
+        dest="asset_provider",
+        choices=["local", "openai-image"],
+        default="local",
+        help="Visual asset provider to use. Defaults to local, which requires --asset-manifest.",
+    )
+    parser.add_argument(
         "--asset-dir",
         dest="asset_dir",
         type=Path,
         default=None,
         help="Optional output directory for resolved local image assets.",
+    )
+    parser.add_argument(
+        "--image-model",
+        dest="image_model",
+        default=DEFAULT_IMAGE_GENERATION_MODEL,
+        help=f"OpenAI image model to use with --asset-provider openai-image. Defaults to {DEFAULT_IMAGE_GENERATION_MODEL}.",
+    )
+    parser.add_argument(
+        "--image-generation-max-retries",
+        dest="image_generation_max_retries",
+        type=int,
+        default=1,
+        help="Maximum OpenAI image generation attempts per asset. Defaults to 1.",
     )
     parser.add_argument(
         "--apps",
@@ -743,6 +778,10 @@ def main() -> None:
 
     # Load environment variables
     load_dotenv()
+    try:
+        validate_asset_provider_args(args)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     app_def_scenario = ScenarioWithAllPAREApps()
     app_def_scenario.initialize()
@@ -780,6 +819,9 @@ def main() -> None:
             resume_from_step=args.resume_from_step,
             asset_manifest_path=args.asset_manifest_path,
             asset_dir=args.asset_dir,
+            asset_provider=args.asset_provider,
+            image_model=args.image_model,
+            image_generation_max_retries=args.image_generation_max_retries,
         )
         try:
             result = agent.run()

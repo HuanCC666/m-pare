@@ -103,7 +103,8 @@ GLOBAL_CONTEXT_PROMPT = textwrap.dedent(
 
     ## Multimodal Override
     This generator now targets multimodal PARE scenarios by default. Every scenario should include visual evidence that is actually inspectable by the agent:
-    - Use local/provided image assets through a manifest-backed `VisualAssetSpec` and resolved sandbox paths.
+    - Use local/provided image assets through a manifest-backed `VisualAssetSpec`, or generated photo-like assets through
+      an explicit image asset provider, then resolve them to sandbox paths.
     - Prefer `SandboxLocalFileSystem.display(...)`, Email image attachments, or `StatefulAlbumApp.view_photo(...)` as the image-byte access path.
     - Do not embed raw image bytes in generated Python; load/copy assets from manifest paths.
     - Use deterministic/local assets for text-heavy images; do not assume a text-only LLM creates image bytes.
@@ -470,7 +471,7 @@ _SCENARIO_UNIQUENESS_BODY = textwrap.dedent(
 _ASSET_PLANNING_BODY = textwrap.dedent(
     """\
     You are the Step 1.5 Visual Asset Planning Agent.
-    Convert the approved narrative into a concrete local-asset plan for multimodal scenario generation.
+    Convert the approved narrative into a concrete visual-asset plan for multimodal scenario generation.
 
     Output ONLY JSON with this shape:
     {
@@ -481,6 +482,9 @@ _ASSET_PLANNING_BODY = textwrap.dedent(
           "source_path": "path/from/asset/library/rice_cooker.jpg",
           "sandbox_path": "/photo.jpg",
           "delivery": "email_attachment",
+          "kind": "photo_like",
+          "generation_prompt": "A realistic product-style photo of a compact white rice cooker on a kitchen counter.",
+          "requires_exact_text": false,
           "visual_requirements": ["compact white rice cooker"],
           "text_requirements": [],
           "ground_truth": {
@@ -492,12 +496,16 @@ _ASSET_PLANNING_BODY = textwrap.dedent(
 
     Rules:
     - Include one `VisualAssetSpec` object for every image that must be visible to the agent.
-    - Use local/provided assets only. Do not request image generation from the text/code model.
-    - `source_path` may be a placeholder if no manifest has been supplied yet, but `filename`, `sandbox_path`, `delivery`,
-      `visual_requirements`, and `ground_truth` must be concrete enough for a local `AssetProvider`.
+    - Include `kind`, `generation_prompt`, and `requires_exact_text` for every asset.
+    - `kind` should be one of `photo_like`, `document_like`, `screenshot_like`, `product_photo`, or `object_photo`.
+    - `source_path` is optional for generated assets but required for local/provided assets.
+    - `generation_prompt` must be a safe, concrete image-generation prompt. Keep it photo-like when generation is plausible.
+    - `openai-image` should only generate photo-like assets (`photo_like`, `product_photo`, or `object_photo`) and should not be used
+      when exact text, prices, small labels, receipts, bills, screenshots, or handwriting must be reproduced reliably.
+    - `filename`, `sandbox_path`, `delivery`, `visual_requirements`, and `ground_truth` must be concrete enough for an `AssetProvider`.
     - Use delivery values such as `email_attachment`, `album_photo`, or `files_display`.
     - Ground truth must contain the visual facts the validation will rely on.
-    - Keep text-heavy requirements explicit; if exact text/numbers matter, say that the asset must be deterministic/user-provided.
+    - Keep text-heavy requirements explicit; set `requires_exact_text` to true and expect a deterministic/user-provided asset.
     """
 )
 

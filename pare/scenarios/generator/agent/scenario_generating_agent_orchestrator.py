@@ -17,7 +17,14 @@ from typing import TYPE_CHECKING, Any
 from pare.benchmark.scenario_loader import load_scenarios_from_registry
 from pare.multi_scenario_runner import MultiScenarioRunner
 from pare.scenarios.config import MultiScenarioRunnerConfig
-from pare.scenarios.generator.assets import LocalAssetProvider, VisualQA
+from pare.scenarios.generator.assets import (
+    DEFAULT_IMAGE_GENERATION_MODEL,
+    ImageGenerationClient,
+    LocalAssetProvider,
+    OpenAIImageAssetProvider,
+    VisualAssetSpec,
+    VisualQA,
+)
 from pare.scenarios.generator.prompt import scenario_generating_agent_prompts as prompt_module
 from pare.scenarios.generator.prompt.scenario_generating_agent_prompts import (
     configure_dynamic_context,
@@ -61,6 +68,10 @@ class ScenarioGeneratingAgentOrchestrator:
         resume_from_step: str | None = None,
         asset_manifest_path: str | Path | None = None,
         asset_dir: str | Path | None = None,
+        asset_provider: str = "local",
+        image_model: str = DEFAULT_IMAGE_GENERATION_MODEL,
+        image_generation_max_retries: int = 1,
+        image_client: ImageGenerationClient | None = None,
         claude_filesystem_config: ClaudeFilesystemConfig | None = None,
     ) -> None:
         """Initialize the orchestrator and supporting step agents."""
@@ -123,6 +134,10 @@ class ScenarioGeneratingAgentOrchestrator:
         self._last_check_result: RunCheckResult | None = None
         self.asset_manifest_path = Path(asset_manifest_path) if asset_manifest_path is not None else None
         self.asset_dir = Path(asset_dir) if asset_dir is not None else self.output_dir / "assets"
+        self.asset_provider = asset_provider
+        self.image_model = image_model
+        self.image_generation_max_retries = max(1, image_generation_max_retries)
+        self.image_client = image_client
         # Declarative filesystem policy for Claude Agent SDK usage. Enforcement
         # will be wired via hooks and tool options in a follow-up change.
         if claude_filesystem_config is None:
@@ -425,7 +440,7 @@ class ScenarioGeneratingAgentOrchestrator:
                         include_header=False,
                     )
                     self._append_step_trajectory("step1_5_assets", asset_plan)
-            resolved_assets_context = self._resolve_asset_manifest_if_available()
+            resolved_assets_context = self._resolve_visual_assets_if_available(asset_plan_content)
             if resolved_assets_context:
                 asset_plan_content = f"{asset_plan_content}\n\n{resolved_assets_context}"
 
@@ -622,15 +637,33 @@ class ScenarioGeneratingAgentOrchestrator:
             return None, self._historical_descriptions
         return filtered_path, filtered
 
-    def _resolve_asset_manifest_if_available(self) -> str:
-        """Resolve local multimodal assets when the caller provided a manifest."""
-        if self.asset_manifest_path is None:
-            return ""
-        provider = LocalAssetProvider(manifest_path=self.asset_manifest_path, output_dir=self.asset_dir)
-        resolved_assets = provider.resolve_assets()
+    def _resolve_visual_assets_if_available(self, asset_plan_content: str) -> str:
+        """Resolve local or generated multimodal assets when configured."""
+        if self.asset_provider == "local":
+            if self.asset_manifest_path is None:
+                return ""
+            provider = LocalAssetProvider(manifest_path=self.asset_manifest_path, output_dir=self.asset_dir)
+            resolved_assets = provider.resolve_assets()
+            manifest_path = str(self.asset_manifest_path)
+        elif self.asset_provider == "openai-image":
+            specs = self._parse_visual_asset_specs(asset_plan_content, require_source_path=False)
+            if not specs:
+                return ""
+            provider = OpenAIImageAssetProvider(
+                output_dir=self.asset_dir,
+                image_model=self.image_model,
+                image_client=self.image_client,
+                max_retries=self.image_generation_max_retries,
+            )
+            resolved_assets = provider.resolve_assets(specs)
+            manifest_path = ""
+        else:
+            raise ValueError(f"Unsupported asset provider: {self.asset_provider}")
+
         qa_result = VisualQA().check(resolved_assets)
         record = {
-            "manifest_path": str(self.asset_manifest_path),
+            "provider": self.asset_provider,
+            "manifest_path": manifest_path,
             "asset_dir": str(self.asset_dir),
             "assets": [asdict(asset) for asset in resolved_assets],
             "visual_qa": asdict(qa_result),
@@ -640,6 +673,26 @@ class ScenarioGeneratingAgentOrchestrator:
         if not qa_result.passed:
             raise RuntimeError("Visual asset QA failed: " + "; ".join(qa_result.errors))
         return "Resolved visual assets:\n" + json.dumps(record, indent=2, default=str)
+
+    @staticmethod
+    def _parse_visual_asset_specs(asset_plan_content: str, *, require_source_path: bool) -> list[VisualAssetSpec]:
+        """Parse Step 1.5 JSON into visual asset specs."""
+        raw = asset_plan_content.strip()
+        if not raw:
+            return []
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start == -1 or end == -1 or end < start:
+            return []
+        data = json.loads(raw[start : end + 1])
+        raw_assets = data.get("assets") if isinstance(data, dict) else data
+        if not isinstance(raw_assets, list):
+            return []
+        return [
+            VisualAssetSpec.from_dict(item, require_source_path=require_source_path)
+            for item in raw_assets
+            if isinstance(item, dict)
+        ]
 
     def _parse_selected_apps_from_prompt_context(self) -> set[str]:
         """Parse selected app class names from the provided dynamic prompt context."""

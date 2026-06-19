@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pare.scenarios.generator.scenario_generator import (
     build_import_instructions_block,
@@ -13,6 +14,9 @@ from pare.scenarios.generator.scenario_generator import (
 from pare.scenarios.generator.utils.apps_init_instructions import ScenarioWithAllPAREApps
 from pare.scenarios.multimodal_benchmark.lib.agent_image_view_log import log_has_agent_image_view
 from pare.scenarios.multimodal_benchmark.lib.jpeg_for_sandbox import jpeg_bytes_for_sandbox
+
+if TYPE_CHECKING:
+    from pytest import MonkeyPatch
 
 
 def test_generator_context_includes_multimodal_apps_and_imports() -> None:
@@ -83,6 +87,98 @@ def test_local_asset_provider_resolves_manifest_and_visual_qa(tmp_path: Path) ->
     result = VisualQA().check(resolved)
     assert result.passed is True
     assert result.errors == []
+
+
+def test_openai_image_provider_uses_default_model_and_fake_client(tmp_path: Path) -> None:
+    """OpenAI image generation should be selectable without network calls in tests."""
+    from pare.scenarios.generator.assets import (
+        DEFAULT_IMAGE_GENERATION_MODEL,
+        OpenAIImageAssetProvider,
+        VisualAssetSpec,
+        VisualQA,
+    )
+
+    calls: list[tuple[str, str]] = []
+
+    def fake_image_client(*, prompt: str, model: str) -> bytes:
+        calls.append((prompt, model))
+        return b"\xff\xd8generated rice cooker\xff\xd9"
+
+    spec = VisualAssetSpec.from_dict(
+        {
+            "asset_id": "rice_cooker_photo",
+            "filename": "rice_cooker.jpg",
+            "sandbox_path": "/photo.jpg",
+            "delivery": "email_attachment",
+            "kind": "photo_like",
+            "generation_prompt": "A compact white rice cooker on a kitchen counter.",
+            "visual_requirements": ["compact white rice cooker"],
+            "ground_truth": {"object": "rice cooker"},
+        },
+        require_source_path=False,
+    )
+    provider = OpenAIImageAssetProvider(output_dir=tmp_path / "generated", image_client=fake_image_client)
+
+    resolved = provider.resolve_assets([spec])
+
+    assert calls == [("A compact white rice cooker on a kitchen counter.", DEFAULT_IMAGE_GENERATION_MODEL)]
+    assert resolved[0].resolved_path.read_bytes() == b"\xff\xd8generated rice cooker\xff\xd9"
+    assert resolved[0].source_path == resolved[0].resolved_path
+    assert resolved[0].provider_metadata["provider"] == "openai-image"
+    assert resolved[0].provider_metadata["model"] == DEFAULT_IMAGE_GENERATION_MODEL
+    metadata_path = tmp_path / "generated" / "rice_cooker.jpg.metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["asset_id"] == "rice_cooker_photo"
+    assert metadata["provider_metadata"]["model"] == DEFAULT_IMAGE_GENERATION_MODEL
+    assert VisualQA().check(resolved).passed is True
+
+
+def test_openai_image_provider_rejects_exact_text_assets(tmp_path: Path) -> None:
+    """Free-form image generation should not be used for exact text assets."""
+    from pare.scenarios.generator.assets import OpenAIImageAssetProvider, VisualAssetSpec
+
+    spec = VisualAssetSpec.from_dict(
+        {
+            "asset_id": "bill_screenshot",
+            "filename": "bill.jpg",
+            "sandbox_path": "/bill.jpg",
+            "delivery": "email_attachment",
+            "kind": "document_like",
+            "generation_prompt": "A utility bill showing exact amount $49.90.",
+            "requires_exact_text": True,
+            "ground_truth": {"amount": "$49.90"},
+        },
+        require_source_path=False,
+    )
+    provider = OpenAIImageAssetProvider(
+        output_dir=tmp_path / "generated",
+        image_client=lambda *, prompt, model: b"\xff\xd8bad\xff\xd9",
+    )
+
+    try:
+        provider.resolve_assets([spec])
+    except ValueError as exc:
+        assert "exact text" in str(exc)
+    else:
+        raise AssertionError("Expected exact-text assets to be rejected")
+
+
+def test_asset_provider_args_validate_openai_key(monkeypatch: MonkeyPatch) -> None:
+    """OpenAI image mode should fail early without OPENAI_API_KEY."""
+    from argparse import Namespace
+
+    from pare.scenarios.generator.scenario_generator import validate_asset_provider_args
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    try:
+        validate_asset_provider_args(
+            Namespace(asset_provider="openai-image", asset_manifest_path=None, image_model="gpt-image-2")
+        )
+    except ValueError as exc:
+        assert "OPENAI_API_KEY" in str(exc)
+    else:
+        raise AssertionError("Expected missing OPENAI_API_KEY to fail validation")
 
 
 def test_multimodal_helpers_normalize_jpeg_and_detect_image_view(tmp_path: Path) -> None:
@@ -165,6 +261,71 @@ def test_debug_orchestrator_threads_resolved_manifest_into_later_steps(tmp_path:
     assert str(tmp_path / "resolved" / "rice_cooker.jpg") in step2_user_prompt
     assert "Resolved visual assets" in step3_user_prompt
     assert "/photo.jpg" in step3_user_prompt
+
+
+def test_debug_orchestrator_threads_generated_assets_into_later_steps(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    """Generated assets should flow through the same resolved-asset context."""
+    from pare.scenarios.generator.agent.scenario_generating_agent_orchestrator import (
+        ScenarioGeneratingAgentOrchestrator,
+    )
+    from pare.scenarios.generator.scenario_generator import prepare_prompt_context_data
+    from pare.scenarios.generator.utils.apps_init_instructions import ScenarioWithAllPAREApps
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    scenario = ScenarioWithAllPAREApps()
+    scenario.initialize()
+    prompt_context = prepare_prompt_context_data(
+        scenario,
+        ["SandboxLocalFileSystem", "StatefulEmailApp", "StatefulShoppingApp"],
+    )
+
+    def fake_image_client(*, prompt: str, model: str) -> bytes:
+        return f"{model}:{prompt}".encode()
+
+    orchestrator = ScenarioGeneratingAgentOrchestrator(
+        trajectory_dir=tmp_path / "trajectory",
+        debug_prompts=True,
+        max_iterations=1,
+        prompt_context=prompt_context,
+        asset_provider="openai-image",
+        image_model="test-image-model",
+        image_client=fake_image_client,
+    )
+    from pare.scenarios.generator.agent.step_agents import StepResult
+
+    asset_plan_content = json.dumps({
+        "assets": [
+            {
+                "asset_id": "rice_cooker_photo",
+                "filename": "rice_cooker.jpg",
+                "sandbox_path": "/photo.jpg",
+                "delivery": "email_attachment",
+                "kind": "photo_like",
+                "generation_prompt": "A compact white rice cooker.",
+                "ground_truth": {"object": "rice cooker"},
+            }
+        ]
+    })
+    orchestrator.asset_planning_agent.run = lambda **_: StepResult(
+        name="Step 1.5: Visual Asset Plan",
+        content=asset_plan_content,
+        iterations=1,
+        notes={},
+        conversation=[{"role": "assistant", "content": asset_plan_content}],
+    )
+
+    result = orchestrator.run()
+
+    resolved_manifest = tmp_path / "trajectory" / "resolved_assets.json"
+    resolved_data = json.loads(resolved_manifest.read_text(encoding="utf-8"))
+    assert resolved_data["assets"][0]["provider_metadata"]["provider"] == "openai-image"
+    assert resolved_data["assets"][0]["provider_metadata"]["model"] == "test-image-model"
+
+    step2_user_prompt = result["steps"][2].conversation[1]["content"]
+    step3_user_prompt = result["steps"][3].conversation[1]["content"]
+    assert "Resolved visual assets" in step2_user_prompt
+    assert "openai-image" in step2_user_prompt
+    assert "test-image-model" in step3_user_prompt
 
 
 def test_multimodal_metadata_exists_for_benchmark_scenarios() -> None:
