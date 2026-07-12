@@ -92,7 +92,7 @@ def determine_selected_apps(app_instances: dict[str, object], requested: Iterabl
     valid = [name for name in requested_unique if name in available]
     invalid = sorted(set(requested_unique) - set(valid))
     if invalid:
-        logging.warning("Ignoring unknown apps: %s (available: %s)", ", ".join(invalid), ", ".join(available))
+        logging.warning(f"Ignoring unknown apps: {', '.join(invalid)} (available: {', '.join(available)})")
     return valid or available
 
 
@@ -416,7 +416,7 @@ def _gather_oracle_entries(inst: object) -> list[str]:
         try:
             tools = inst.get_tools_with_attribute(attr, tool_type)  # type: ignore[attr-defined]  # naq
         except Exception as exc:
-            logging.debug("Skipping tools for %s due to error: %s", inst, exc)
+            logging.debug(f"Skipping tools for {inst} due to error: {exc}")
             continue
         for tool in tools:
             func_name = getattr(tool, "func_name", None)
@@ -491,7 +491,7 @@ def _gather_event_registered_entries(inst: object) -> list[str]:
         try:
             member = getattr(inst, name)
         except Exception as exc:
-            logging.debug("Skipping %s.%s while gathering tools due to error: %s", inst.__class__.__name__, name, exc)
+            logging.debug(f"Skipping {inst.__class__.__name__}.{name} while gathering tools due to error: {exc}")
             continue
         if not callable(member):
             continue
@@ -555,7 +555,7 @@ def _gather_event_registered_brief_entries(inst: object) -> list[str]:
         try:
             tools = inst.get_tools_with_attribute(attr, tool_type)  # type: ignore[attr-defined]  # naq
         except Exception as exc:
-            logging.debug("Skipping tools for %s due to error: %s", inst, exc)
+            logging.debug(f"Skipping tools for {inst} due to error: {exc}")
             continue
         for tool in tools:
             func_name = getattr(tool, "func_name", None)
