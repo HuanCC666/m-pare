@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from pare.scenarios.generator.prompt.scenario_generating_agent_prompts import (
     APPS_AND_DATA_USER_PROMPT,
+    ASSET_PLANNING_USER_PROMPT,
     EVENTS_FLOW_USER_PROMPT,
     SCENARIO_DESCRIPTION_USER_PROMPT,
     VALIDATION_USER_PROMPT,
@@ -15,7 +16,7 @@ from pare.scenarios.generator.prompt.scenario_generating_agent_prompts import (
 # Import the underlying `prompts` module directly so that updates from
 # `configure_dynamic_context()` (which mutates module-level globals) are
 # visible here.
-from .claude_backend import ClaudeAgentRuntimeConfig, run_claude_conversation
+from .claude_backend import ClaudeAgentRuntimeConfig, ClaudeCallResult, run_claude_conversation
 
 logger = logging.getLogger(__name__)
 
@@ -75,60 +76,25 @@ class BaseStepAgent:
                 conversation=conversation,
                 debug_response_builder=debug_response_builder,
             )
+        usage_calls: list[dict[str, Any]] = []
         for iteration in range(1, self.max_iterations + 1):
-            response = self._invoke_llm(conversation, iteration)
+            call = self._invoke_llm(conversation, iteration)
+            response = call.text
             assistant_msg = {"role": "assistant", "content": response}
             notes: dict[str, Any] = {"iteration": iteration}
+            if call.usage:
+                usage_calls.append(call.usage)
+                notes["llm_usage"] = call.usage
 
-            if self.uniqueness_agent is not None:
-                unique, verdict = self.uniqueness_agent.evaluate(response)
-                notes["uniqueness_verdict"] = verdict
-                if not unique:
-                    logger.info(
-                        "%s uniqueness rejection (iteration %s): %s\nCandidate description:\n%s",
-                        self.name,
-                        iteration,
-                        verdict,
-                        response,
-                    )
-                    conversation.extend([
-                        assistant_msg,
-                        {
-                            "role": "user",
-                            "content": f"Uniqueness review failed: {verdict}",
-                        },
-                    ])
-                    continue
-
-            check_passed = True
-            feedback = ""
-            if check_callback is not None:
-                check_passed, feedback = check_callback(response, iteration)
-                if feedback:
-                    notes["check_feedback"] = feedback
-
-            if not check_passed:
-                logger.warning(
-                    "%s check_callback failed at iteration %s. Feedback:\n%s",
-                    self.name,
-                    iteration,
-                    feedback,
-                )
-                conversation.extend([
-                    assistant_msg,
-                    {
-                        "role": "user",
-                        "content": feedback or "Check failed; please revise.",
-                    },
-                ])
+            if not self._handle_uniqueness(response, notes, usage_calls, conversation, assistant_msg, iteration):
+                continue
+            if not self._handle_check(response, notes, conversation, assistant_msg, iteration, check_callback):
                 continue
 
             full_conversation = [*conversation, assistant_msg]
-            logger.info(
-                "%s succeeded at iteration %s",
-                self.name,
-                iteration,
-            )
+            if usage_calls:
+                notes["llm_usage_calls"] = usage_calls
+            logger.info("%s succeeded at iteration %s", self.name, iteration)
             return StepResult(
                 name=self.name,
                 content=response,
@@ -138,7 +104,68 @@ class BaseStepAgent:
             )
         raise StepExecutionError(f"{self.name} failed after {self.max_iterations} attempts.")
 
-    def _invoke_llm(self, conversation: list[dict[str, str]], iteration: int) -> str:
+    def _handle_uniqueness(
+        self,
+        response: str,
+        notes: dict[str, Any],
+        usage_calls: list[dict[str, Any]],
+        conversation: list[dict[str, str]],
+        assistant_msg: dict[str, str],
+        iteration: int,
+    ) -> bool:
+        """Return True when uniqueness passed (or no uniqueness agent)."""
+        if self.uniqueness_agent is None:
+            return True
+        unique, verdict = self.uniqueness_agent.evaluate(response)
+        notes["uniqueness_verdict"] = verdict
+        uniqueness_usage = getattr(self.uniqueness_agent, "last_usage", None)
+        if isinstance(uniqueness_usage, dict) and uniqueness_usage:
+            usage_calls.append(uniqueness_usage)
+        if unique:
+            return True
+        logger.info(
+            "%s uniqueness rejection (iteration %s): %s\nCandidate description:\n%s",
+            self.name,
+            iteration,
+            verdict,
+            response,
+        )
+        conversation.extend([
+            assistant_msg,
+            {"role": "user", "content": f"Uniqueness review failed: {verdict}"},
+        ])
+        return False
+
+    def _handle_check(
+        self,
+        response: str,
+        notes: dict[str, Any],
+        conversation: list[dict[str, str]],
+        assistant_msg: dict[str, str],
+        iteration: int,
+        check_callback: Callable[[str, int], tuple[bool, str]] | None,
+    ) -> bool:
+        """Return True when the optional check callback passed (or is absent)."""
+        if check_callback is None:
+            return True
+        check_passed, feedback = check_callback(response, iteration)
+        if feedback:
+            notes["check_feedback"] = feedback
+        if check_passed:
+            return True
+        logger.warning(
+            "%s check_callback failed at iteration %s. Feedback:\n%s",
+            self.name,
+            iteration,
+            feedback,
+        )
+        conversation.extend([
+            assistant_msg,
+            {"role": "user", "content": feedback or "Check failed; please revise."},
+        ])
+        return False
+
+    def _invoke_llm(self, conversation: list[dict[str, str]], iteration: int) -> ClaudeCallResult:
         if self._claude_config is None:
             raise StepExecutionError(f"{self.name} is misconfigured: missing Claude runtime config.")
         return run_claude_conversation(
@@ -217,6 +244,7 @@ class StepEditAgent(BaseStepAgent):
         scenario_file_path: str | None = None,
         apps_and_data: str | None = None,
         events_flow: str | None = None,
+        asset_plan: str | None = None,
         check_callback: Callable[[str, int], tuple[bool, str]] | None = None,
     ) -> StepResult:
         """Dispatch to the appropriate per-step prompt builder."""
@@ -232,8 +260,13 @@ class StepEditAgent(BaseStepAgent):
                 raise StepExecutionError(
                     "Apps & Data step requires scenario_description and scenario_file_path.",
                 )
+            scenario_description_with_assets = scenario_description
+            if asset_plan:
+                scenario_description_with_assets = (
+                    f"{scenario_description}\n\nVisual asset plan:\n---\n{asset_plan}\n---"
+                )
             user_prompt = APPS_AND_DATA_USER_PROMPT.format(
-                scenario_description=scenario_description,
+                scenario_description=scenario_description_with_assets,
                 scenario_file_path=scenario_file_path,
             )
 
@@ -244,13 +277,26 @@ class StepEditAgent(BaseStepAgent):
                     "# (LLM call skipped)"
                 )
 
+        elif self.step_kind == "asset_planning":
+            if scenario_description is None:
+                raise StepExecutionError("Asset Planning step requires scenario_description.")
+            user_prompt = ASSET_PLANNING_USER_PROMPT.format(scenario_description=scenario_description)
+
+            def debug_builder(_: str) -> str:
+                return '{"assets": []}'
+
         elif self.step_kind == "events_flow":
             if scenario_description is None or apps_and_data is None or scenario_file_path is None:
                 raise StepExecutionError(
                     "Events Flow step requires scenario_description, apps_and_data, and scenario_file_path.",
                 )
+            scenario_description_with_assets = scenario_description
+            if asset_plan:
+                scenario_description_with_assets = (
+                    f"{scenario_description}\n\nVisual asset plan:\n---\n{asset_plan}\n---"
+                )
             user_prompt = EVENTS_FLOW_USER_PROMPT.format(
-                scenario_description=scenario_description,
+                scenario_description=scenario_description_with_assets,
                 apps_and_data=apps_and_data,
                 scenario_file_path=scenario_file_path,
             )

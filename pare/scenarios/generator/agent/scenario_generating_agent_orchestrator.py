@@ -17,12 +17,26 @@ from typing import TYPE_CHECKING, Any
 from pare.benchmark.scenario_loader import load_scenarios_from_registry
 from pare.multi_scenario_runner import MultiScenarioRunner
 from pare.scenarios.config import MultiScenarioRunnerConfig
+from pare.scenarios.generator.assets import (
+    DEFAULT_FIREWORKS_IMAGE_MODEL,
+    DEFAULT_OPENAI_IMAGE_MODEL,
+    FireworksImageAssetProvider,
+    ImageGenerationClient,
+    LocalAssetProvider,
+    OpenAIImageAssetProvider,
+    VisualAssetSpec,
+    VisualQA,
+)
 from pare.scenarios.generator.prompt import scenario_generating_agent_prompts as prompt_module
 from pare.scenarios.generator.prompt.scenario_generating_agent_prompts import (
     configure_dynamic_context,
 )
 
-from .claude_backend import ClaudeAgentRuntimeConfig, ClaudeFilesystemConfig
+from .claude_backend import (
+    ClaudeAgentRuntimeConfig,
+    ClaudeFilesystemConfig,
+    summarize_usage_records,
+)
 from .scenario_uniqueness_agent import ScenarioUniquenessCheckAgent
 from .step_agents import StepEditAgent, StepResult
 
@@ -58,6 +72,12 @@ class ScenarioGeneratingAgentOrchestrator:
         debug_prompts: bool = False,
         resume_from_step2: bool = False,
         resume_from_step: str | None = None,
+        asset_manifest_path: str | Path | None = None,
+        asset_dir: str | Path | None = None,
+        asset_provider: str = "local",
+        image_model: str | None = None,
+        image_generation_max_retries: int = 1,
+        image_client: ImageGenerationClient | None = None,
         claude_filesystem_config: ClaudeFilesystemConfig | None = None,
     ) -> None:
         """Initialize the orchestrator and supporting step agents."""
@@ -108,16 +128,29 @@ class ScenarioGeneratingAgentOrchestrator:
         # remains read-only for reference.
         self.scenario_file = self.seed_scenarios_dir / "editable_seed_scenario.py"
 
-        # Global scenario metadata used for uniqueness checks and analysis.
-        # Stored under `pare/scenarios/scenario_metadata.json` so it is shared
-        # across runs and not tied to a particular output directory.
-        self.scenario_metadata_path = self.repo_root / "scenarios" / "scenario_metadata.json"
+        # Multimodal scenario metadata used for uniqueness checks and analysis.
+        # The generator override targets multimodal scenarios, so compare against
+        # the multimodal benchmark corpus rather than the older text-only metadata.
+        self.scenario_metadata_path = self.repo_root / "scenarios" / "multimodal_scenario_metadata.json"
 
         # Dynamic prompt context (selected apps/tools) for this run.
         # IMPORTANT: must be set before any helper that reads `_prompt_context`.
         self._prompt_context: dict[str, str] = prompt_context or {}
 
         self._last_check_result: RunCheckResult | None = None
+        self.asset_manifest_path = Path(asset_manifest_path) if asset_manifest_path is not None else None
+        self.asset_dir = Path(asset_dir) if asset_dir is not None else self.output_dir / "assets"
+        self.asset_provider = asset_provider
+        if image_model is None:
+            self.image_model = (
+                DEFAULT_FIREWORKS_IMAGE_MODEL
+                if asset_provider == "fireworks-image"
+                else DEFAULT_OPENAI_IMAGE_MODEL
+            )
+        else:
+            self.image_model = image_model
+        self.image_generation_max_retries = max(1, image_generation_max_retries)
+        self.image_client = image_client
         # Declarative filesystem policy for Claude Agent SDK usage. Enforcement
         # will be wired via hooks and tool options in a follow-up change.
         if claude_filesystem_config is None:
@@ -139,6 +172,9 @@ class ScenarioGeneratingAgentOrchestrator:
             self.scenario_metadata_path_for_prompt = filtered_path
             self._historical_descriptions_for_prompt = filtered_entries
 
+        # Shared sink for Claude Agent SDK usage/cost records across all step calls.
+        self._llm_usage_records: list[dict[str, Any]] = []
+
         # Per-step Claude runtime configurations. Narrative and uniqueness
         # checks do not need code-editing tools, while Steps 2-4 use Read/Write
         # to modify the seed_scenario file.
@@ -147,18 +183,21 @@ class ScenarioGeneratingAgentOrchestrator:
             allowed_tools=["Read"],
             permission_mode="acceptEdits",
             filesystem=self.claude_filesystem_config,
+            usage_sink=self._llm_usage_records,
         )
         self._claude_config_step1 = ClaudeAgentRuntimeConfig(
             cwd=self.repo_root,
             allowed_tools=["Read"],
             permission_mode="acceptEdits",
             filesystem=self.claude_filesystem_config,
+            usage_sink=self._llm_usage_records,
         )
         self._claude_config_code_steps = ClaudeAgentRuntimeConfig(
             cwd=self.repo_root,
             allowed_tools=["Read", "Write"],
             permission_mode="acceptEdits",
             filesystem=self.claude_filesystem_config,
+            usage_sink=self._llm_usage_records,
         )
 
         if prompt_context is not None:
@@ -201,6 +240,14 @@ class ScenarioGeneratingAgentOrchestrator:
             system_prompt=prompt_module.SCENARIO_DESCRIPTION_SYSTEM_PROMPT,
             max_iterations=max_iterations,
             uniqueness_agent=self.uniqueness_agent,
+            debug_prompts=debug_prompts,
+            claude_runtime_config=self._claude_config_step1,
+        )
+        self.asset_planning_agent = StepEditAgent(
+            step_name="Step 1.5: Visual Asset Plan",
+            step_kind="asset_planning",
+            system_prompt=prompt_module.ASSET_PLANNING_SYSTEM_PROMPT,
+            max_iterations=max_iterations,
             debug_prompts=debug_prompts,
             claude_runtime_config=self._claude_config_step1,
         )
@@ -389,6 +436,33 @@ class ScenarioGeneratingAgentOrchestrator:
                         # can inspect the early state if Step 2 fails.
                         self._snapshot_scenario("step1")
 
+            # Step 1.5: Visual Asset Planning
+            asset_plan_path = self.output_dir / "assets.json"
+            if resume_mode in {"step2", "step3", "step4"} and asset_plan_path.exists():
+                asset_plan_content = self._safe_read_text(asset_plan_path)
+                asset_plan = StepResult(
+                    name="Step 1.5: Visual Asset Plan (resumed)",
+                    content=asset_plan_content,
+                    iterations=0,
+                    notes={"resumed_from_disk": True},
+                    conversation=[],
+                )
+            else:
+                asset_plan = self.asset_planning_agent.run(scenario_description=step1.content)
+                asset_plan_content = asset_plan.content
+                if not self.debug_prompts:
+                    self._write_output(
+                        content=asset_plan_content,
+                        path=asset_plan_path,
+                        header="Step 1.5: Visual Asset Plan",
+                        append=False,
+                        include_header=False,
+                    )
+                    self._append_step_trajectory("step1_5_assets", asset_plan)
+            resolved_assets_context = self._resolve_visual_assets_if_available(asset_plan_content)
+            if resolved_assets_context:
+                asset_plan_content = f"{asset_plan_content}\n\n{resolved_assets_context}"
+
             # Step 2: Apps & Data Setup
             if resume_mode in {"step3", "step4"} and not self.debug_prompts:
                 logger.info("Resuming from %s: skipping Step 2 generation.", resume_mode)
@@ -428,6 +502,7 @@ class ScenarioGeneratingAgentOrchestrator:
 
                 step2 = self.step2_agent.run(
                     scenario_description=step1.content,
+                    asset_plan=asset_plan_content,
                     scenario_file_path=str(self.scenario_file),
                     check_callback=check2,
                 )
@@ -478,6 +553,7 @@ class ScenarioGeneratingAgentOrchestrator:
 
                 step3 = self.step3_agent.run(
                     scenario_description=step1.content,
+                    asset_plan=asset_plan_content,
                     apps_and_data=step2.content,
                     scenario_file_path=str(self.scenario_file),
                     check_callback=check3,
@@ -527,13 +603,16 @@ class ScenarioGeneratingAgentOrchestrator:
                 # the next run starts from a clean slate.
                 self._export_final_scenario_and_reset()
 
+            cost_summary = self._write_usage_cost_summary()
             logger.info("Multi-step scenario generation pipeline complete.")
             return {
                 "description_path": str(self.scenario_metadata_path),
                 "scenario_file_path": str(self.scenario_file),
                 "trajectory_dir": str(self.trajectory_dir),
+                "cost_summary": cost_summary,
                 "steps": [
                     step1,
+                    asset_plan,
                     step2,
                     step3,
                     step4,
@@ -547,6 +626,7 @@ class ScenarioGeneratingAgentOrchestrator:
                 runtime_error = self._last_check_result.runtime_error or not self._last_check_result.validation_reached
                 validation_reached = self._last_check_result.validation_reached
             self._persist_failed_scenario(str(exc), runtime_error=runtime_error, validation_reached=validation_reached)
+            self._write_usage_cost_summary()
             raise
 
     def _maybe_write_filtered_metadata_for_prompt(self) -> tuple[Path | None, list[dict[str, Any]]]:
@@ -578,6 +658,71 @@ class ScenarioGeneratingAgentOrchestrator:
             )
             return None, self._historical_descriptions
         return filtered_path, filtered
+
+    def _resolve_visual_assets_if_available(self, asset_plan_content: str) -> str:
+        """Resolve local or generated multimodal assets when configured."""
+        if self.asset_provider == "local":
+            if self.asset_manifest_path is None:
+                return ""
+            provider = LocalAssetProvider(manifest_path=self.asset_manifest_path, output_dir=self.asset_dir)
+            resolved_assets = provider.resolve_assets()
+            manifest_path = str(self.asset_manifest_path)
+        elif self.asset_provider in {"openai-image", "fireworks-image"}:
+            specs = self._parse_visual_asset_specs(asset_plan_content, require_source_path=False)
+            if not specs:
+                return ""
+            if self.asset_provider == "openai-image":
+                provider = OpenAIImageAssetProvider(
+                    output_dir=self.asset_dir,
+                    image_model=self.image_model,
+                    image_client=self.image_client,
+                    max_retries=self.image_generation_max_retries,
+                )
+            else:
+                provider = FireworksImageAssetProvider(
+                    output_dir=self.asset_dir,
+                    image_model=self.image_model,
+                    image_client=self.image_client,
+                    max_retries=self.image_generation_max_retries,
+                )
+            resolved_assets = provider.resolve_assets(specs)
+            manifest_path = ""
+        else:
+            raise ValueError(f"Unsupported asset provider: {self.asset_provider}")
+
+        qa_result = VisualQA().check(resolved_assets)
+        record = {
+            "provider": self.asset_provider,
+            "manifest_path": manifest_path,
+            "asset_dir": str(self.asset_dir),
+            "assets": [asdict(asset) for asset in resolved_assets],
+            "visual_qa": asdict(qa_result),
+        }
+        manifest_out = self.trajectory_dir / "resolved_assets.json"
+        manifest_out.write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
+        if not qa_result.passed:
+            raise RuntimeError("Visual asset QA failed: " + "; ".join(qa_result.errors))
+        return "Resolved visual assets:\n" + json.dumps(record, indent=2, default=str)
+
+    @staticmethod
+    def _parse_visual_asset_specs(asset_plan_content: str, *, require_source_path: bool) -> list[VisualAssetSpec]:
+        """Parse Step 1.5 JSON into visual asset specs."""
+        raw = asset_plan_content.strip()
+        if not raw:
+            return []
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start == -1 or end == -1 or end < start:
+            return []
+        data = json.loads(raw[start : end + 1])
+        raw_assets = data.get("assets") if isinstance(data, dict) else data
+        if not isinstance(raw_assets, list):
+            return []
+        return [
+            VisualAssetSpec.from_dict(item, require_source_path=require_source_path)
+            for item in raw_assets
+            if isinstance(item, dict)
+        ]
 
     def _parse_selected_apps_from_prompt_context(self) -> set[str]:
         """Parse selected app class names from the provided dynamic prompt context."""
@@ -983,6 +1128,32 @@ class ScenarioGeneratingAgentOrchestrator:
                 handle.write("\n")
         except Exception:  # pragma: no cover - trajectory logging is best-effort
             logger.exception("Failed to append step trajectory for %s", step_label)
+
+    def _write_usage_cost_summary(self) -> dict[str, Any]:
+        """Persist aggregated Claude Agent SDK usage/cost estimates for this run."""
+        summary = summarize_usage_records(self._llm_usage_records)
+        path = self.trajectory_dir / "cost.json"
+        try:
+            path.write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
+        except Exception:  # pragma: no cover - trajectory logging is best-effort
+            logger.exception("Failed to write usage/cost summary to %s", path)
+            return summary
+
+        total = summary.get("total_cost_usd")
+        if total is None:
+            logger.info(
+                "LLM usage summary written to %s (%s calls; no SDK cost estimate available)",
+                path,
+                summary.get("calls", 0),
+            )
+        else:
+            logger.info(
+                "LLM usage summary written to %s (%s calls; estimated total_cost_usd=$%.6f)",
+                path,
+                summary.get("calls", 0),
+                float(total),
+            )
+        return summary
 
     def _export_final_scenario_and_reset(self) -> None:
         """Export the final scenario by class name, then reset the working file.

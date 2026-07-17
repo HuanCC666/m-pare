@@ -1,0 +1,234 @@
+[
+  {
+    "scenario_id": "bill_screenshot_payment_reminder_suggestion",
+    "class_name": "BillScreenshotPaymentReminderSuggestion",
+    "description": "Agent extracts bill details from screenshot and handles reminder creation.\n\nA utility/credit-card bill screenshot arrives via email attachment. The assistant must:\n1. Read the message and inspect the image first.\n2. Extract amount and due date from the screenshot.\n3. Ask one proactive accept/reject permission question before creating a reminder.\n4. If accepted, create the reminder directly.\n\nThis scenario evaluates:\n- multimodal grounding on a bill screenshot\n- proactive permission before side-effect writes\n- cross-app reasoning (Email + Files + Reminders)\n\nConstraints:\n- Image reading/browsing can happen before permission.\n- Do not ask for extra details.\n- User responses should stay in accept/reject style.\n- Reminder due_datetime may be any moment from scenario start through end of the bill due day (UTC),\n  so advance reminders are valid.",
+    "apps": [
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface",
+      "SandboxLocalFileSystem",
+      "StatefulEmailApp",
+      "StatefulReminderApp"
+    ],
+    "source_path": "pare/scenarios/multimodal_benchmark/bill_screenshot_payment_reminder_suggestion.py",
+    "timestamp": "2026-05-31T23:05:18.815568"
+  },
+  {
+    "scenario_id": "boarding_pass_chat_calendar_update_suggestion",
+    "class_name": "BoardingPassChatCalendarUpdateSuggestion",
+    "description": "Agent creates a flight calendar event from a friend's boarding-pass chat attachment.\n\nA friend messages in the Chicago trip thread: asks whether the user has bought tickets\nyet, says they already booked, and attaches their mobile boarding-pass screenshot (env\ninject only \u2014 the simulated user cannot send messages or attachments). Calendar starts\nempty for this flight; gate, seat, and boarding time are only visible on the screenshot.\nThe assistant must:\n1. Read the trip chat and inspect the friend's boarding-pass attachment.\n2. Propose creating a calendar event with gate, seat, and boarding/departure times from the image.\n3. Add the calendar event only after accept/reject acceptance.\n\nConstraints:\n- Proactive permission before calendar writes.\n- User responses are accept/reject only.\n- No AUI user-input trigger; no user-authored chat or attachment env events.\n- Incoming message text must not state gate, seat, or boarding time.",
+    "apps": [
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface",
+      "SandboxLocalFileSystem",
+      "StatefulCalendarApp",
+      "StatefulMessagingApp"
+    ],
+    "source_path": "pare/scenarios/multimodal_benchmark/boarding_pass_chat_calendar_update_suggestion.py",
+    "timestamp": "2026-05-31T23:05:18.816797"
+  },
+  {
+    "scenario_id": "business_card_contact_create",
+    "class_name": "BusinessCardNoteContactCreateSuggestion",
+    "description": "Agent saves a conference contact from a business card photo on a user Note.\n\nThe user attaches a business card image to an Inbox note. Name, company, email,\nand phone appear only on the card. The assistant must:\n1. Read the note and inspect the attachment.\n2. Extract contact fields from the image.\n3. Propose creating a Contacts entry with the parsed details.\n4. Create the contact only after accept/reject acceptance.\n\nConstraints:\n- Proactive permission before Contacts writes.\n- User responses are accept/reject only.\n- No AUI user-input trigger.\n- Note body must not include the person's email or phone.",
+    "apps": [
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface",
+      "SandboxLocalFileSystem",
+      "StatefulContactsApp",
+      "StatefulNotesApp",
+      "StatefulReminderApp"
+    ],
+    "source_path": "pare/scenarios/multimodal_benchmark/business_card_contact_create.py",
+    "timestamp": "2026-05-31T23:05:18.817466"
+  },
+  {
+    "scenario_id": "delivery_wrong_item_suggestion",
+    "class_name": "DeliveryLabelWrongItemNoteSuggestion",
+    "description": "Agent emails support about a wrong-item delivery using Album photos.\n\nThe user left a reminder to send an exchange email. Delivery photos (shipping label\nand box contents) are already in Camera Roll with generic file names and no captions.\nA store delivery confirmation email arrives with the after-sales address and a note\nthat product issues must include supporting photos. The assistant must:\n1. Read the delivery confirmation email and the exchange reminder.\n2. Inspect both delivery photos in Album.\n3. Propose emailing support with the photos attached.\n4. Send only after accept/reject acceptance.\n\nConstraints:\n- Proactive permission before sending email.\n- User responses are accept/reject only.\n- No AUI user-input trigger.\n- Reminder text and delivery email must not state what was actually inside the box.",
+    "apps": [
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface",
+      "SandboxLocalFileSystem",
+      "StatefulAlbumApp",
+      "StatefulEmailApp",
+      "StatefulReminderApp"
+    ],
+    "source_path": "pare/scenarios/multimodal_benchmark/delivery_wrong_item_suggestion.py",
+    "timestamp": "2026-05-31T23:05:18.818692"
+  },
+  {
+    "scenario_id": "dinner_receipt_aa_suggestion",
+    "class_name": "DinnerReceiptAlbumEmailAaSuggestion",
+    "description": "Agent tells the dinner group each person's share after reading receipt photos in Album.\n\nThe user covered Thai Garden dinner for four people last night. Sam and two other\nfriends are in a group chat titled \"Thai Garden Dinner\". Sam messages asking how much\neveryone owes back. Two receipt photos (and a table snapshot decoy) are already in\nthe Camera Roll from that evening, with generic file names and no captions. Amounts\nand the paid checkmark are only on the images. The assistant must:\n1. Read Sam's group message.\n2. List tonight's album photos and visually inspect receipt shots.\n3. Identify the checked bill total and compute a four-way split.\n4. Propose replying in the group chat with the per-person amount.\n5. Send the group reply only after accept/reject acceptance.\n\nPlace JPEGs under ``assets/dinner_receipt_aa_suggestion/`` (see ``RECEIPT_PHOTO_FIXTURES``).\n\nConstraints:\n- Proactive permission before messaging the group.\n- User responses are accept/reject only.\n- No AUI user-input trigger.\n- Sam's message must not state totals or which receipt is correct.",
+    "apps": [
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface",
+      "SandboxLocalFileSystem",
+      "StatefulAlbumApp",
+      "StatefulMessagingApp"
+    ],
+    "source_path": "pare/scenarios/multimodal_benchmark/dinner_receipt_aa_suggestion.py",
+    "timestamp": "2026-05-31T23:05:18.820527"
+  },
+  {
+    "scenario_id": "friend_bird_photos_album_share",
+    "class_name": "FriendBirdPhotosAlbumShare",
+    "description": "Agent shares today's bird photos after a friend asks via Messages.\n\nScenario environment time is ``start_time`` (2025-11-22 evening). Album entries\nmirror a real camera roll: generic file names and capture timestamps only (no\ncaptions or tags). The assistant must:\n1. Read the incoming message and infer the request.\n2. Filter Camera Roll to **today's** photos via ``list_photos(..., taken_on=...)``.\n3. **View** candidates from that day and use vision to pick bird shots.\n4. Propose sending them to the friend, then attach after user acceptance.\n\nPlace six ``IMG_*.jpg`` files under ``assets/friend_bird_photos_album_share/``\n(see ``PHOTO_FIXTURES``). Entries with ``bird=True`` are sent to the friend in the oracle.\n\nConstraints:\n- Ask one proactive accept/reject question before messaging the friend.\n- User responses are limited to accept/reject style.",
+    "apps": [
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface",
+      "SandboxLocalFileSystem",
+      "StatefulAlbumApp",
+      "StatefulMessagingApp"
+    ],
+    "source_path": "pare/scenarios/multimodal_benchmark/friend_bird_photos_album_share.py",
+    "timestamp": "2026-05-31T23:05:18.821835"
+  },
+  {
+    "scenario_id": "grocery_price_match",
+    "class_name": "ReceiptNotePriceMatchCartSuggestion",
+    "description": "Agent price-checks a purchased milk item from a receipt photo in Messages.\n\nA friend sends a message with a receipt image and asks if the milk purchase is worth it.\nThe assistant must:\n1. Read the incoming message with receipt attachment.\n2. View the receipt photo (vision) to ground the price-check.\n3. Search Shopping and identify a cheaper matching milk item.\n4. Propose adding it to cart; add only after accept/reject acceptance.\n\nConstraints:\n- Proactive: one permission proposal before cart writes.\n- User responses are accept/reject only.\n- Message text does not carry the paid price or the cheaper SKU name.",
+    "apps": [
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface",
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulShoppingApp"
+    ],
+    "source_path": "pare/scenarios/multimodal_benchmark/grocery_price_match.py",
+    "timestamp": "2026-05-31T23:05:18.823260"
+  },
+  {
+    "scenario_id": "meeting_recent_parking_sign_suggestion",
+    "class_name": "MeetingRecentParkingSignSuggestion",
+    "description": "Agent uses a meeting email + recent parking sign photo to propose a move-car reminder.\n\nA meeting-update email arrives with an end time. The user also has a recent parking\nsign photo in Camera Roll where the parking restriction is only visible in the image.\nThe assistant must:\n1. Read the meeting email.\n2. Check recent Camera Roll entries and inspect the parking sign photo.\n3. Proactively propose a move-car reminder using inferred latest move time.\n4. Create the reminder only after accept/reject acceptance.\n\nConstraints:\n- No location APIs are available.\n- \"Parking start\" should be inferred from the photo taken_at timestamp.\n- User responses are accept/reject only.",
+    "apps": [
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface",
+      "SandboxLocalFileSystem",
+      "StatefulAlbumApp",
+      "StatefulEmailApp",
+      "StatefulReminderApp"
+    ],
+    "source_path": "pare/scenarios/multimodal_benchmark/meeting_recent_parking_sign_suggestion.py",
+    "timestamp": "2026-05-31T23:05:18.823991"
+  },
+  {
+    "scenario_id": "movie_poster_showtime_booking_suggestion",
+    "class_name": "MoviePosterShowtimeBookingSuggestion",
+    "description": "Agent infers movie intent from an image poster and suggests booking nearby tickets.\n\nA friend sends an image attachment (teaser poster).\nThe assistant must:\n1. Read the incoming friend message and use the image attachment as the trigger.\n2. Retrieve nearby showtimes for that movie from the shopping/ticket catalog.\n3. Check friend availability from the friend message content and user availability from Calendar.\n4. Proactively suggest booking a matching showtime.\n5. After user acceptance, add two tickets to cart and complete checkout.\n\nConstraints:\n- Reading email and inspecting the poster can happen before permission.\n- Before calendar/ticketing actions, ask one proactive accept/reject permission question.\n- Do not require user instructions beyond accept/reject style responses.",
+    "apps": [
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface",
+      "SandboxLocalFileSystem",
+      "StatefulCalendarApp",
+      "StatefulEmailApp",
+      "StatefulShoppingApp"
+    ],
+    "source_path": "pare/scenarios/multimodal_benchmark/movie_poster_showtime_booking_suggestion.py",
+    "timestamp": "2026-05-31T23:05:18.824598"
+  },
+  {
+    "scenario_id": "prescription_calendar_suggestion",
+    "class_name": "PrescriptionCalendarSuggestion",
+    "description": "Agent schedules post-meal medication blocks from a prescription label photo.\n\nThe user attaches a pharmacy label image to an Inbox note (environment event).\nDosing schedule (twice daily, 30 minutes after breakfast and dinner) is only on\nthe label. The assistant must:\n1. Read the note and inspect the attachment.\n2. Infer lunch/dinner medication times from the image.\n3. Propose creating calendar blocks for the next several days.\n4. Create events only after accept/reject acceptance.\n\nConstraints:\n- Proactive permission before calendar writes.\n- User responses are accept/reject only.\n- No AUI user-input trigger.\n- Note body must not include specific dose times or drug name.",
+    "apps": [
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface",
+      "SandboxLocalFileSystem",
+      "StatefulCalendarApp",
+      "StatefulNotesApp",
+      "StatefulReminderApp"
+    ],
+    "source_path": "pare/scenarios/multimodal_benchmark/prescription_calendar_suggestion.py",
+    "timestamp": "2026-05-31T23:05:18.825392"
+  },
+  {
+    "scenario_id": "rental_poster_viewing_plan_suggestion",
+    "class_name": "RentalPosterViewingPlanSuggestion",
+    "description": "Agent extracts rental-poster constraints and builds a viewing logistics plan.\n\nA rental poster screenshot arrives via email attachment. The assistant must:\n1. Read the message and inspect the image first.\n2. Ask one proactive accept/reject permission question before apartment/calendar/cab actions.\n3. After acceptance, map poster constraints into apartment search and combine schedule + cab estimate.\n4. Save the selected listing and plan.\n\nConstraints:\n- Image reading/browsing is allowed before permission.\n- Do not request additional user details.\n- User responses are limited to accept/reject style.",
+    "apps": [
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface",
+      "SandboxLocalFileSystem",
+      "StatefulApartmentApp",
+      "StatefulCalendarApp",
+      "StatefulEmailApp"
+    ],
+    "source_path": "pare/scenarios/multimodal_benchmark/rental_poster_viewing_plan_suggestion.py",
+    "timestamp": "2026-05-31T23:05:18.826840"
+  },
+  {
+    "scenario_id": "rice_cooker_photo_cart_suggestion",
+    "class_name": "RiceCookerPhotoCartSuggestion",
+    "description": "Agent infers shopping intent from a rice cooker photo.\n\nThe user sends a real product photo attachment and implicitly expresses\npurchase intent. The assistant should:\n\n1. Read the incoming email with image attachment.\n2. Open / inspect the image attachment.\n3. Infer from visual evidence that the object is a rice cooker.\n4. Search the Shopping app for a matching product.\n5. Proactively ask for permission before cart modification.\n6. Add the rice cooker to cart after user approval.",
+    "apps": [
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface",
+      "SandboxLocalFileSystem",
+      "StatefulEmailApp",
+      "StatefulShoppingApp"
+    ],
+    "source_path": "pare/scenarios/multimodal_benchmark/rice_cooker_photo_cart_suggestion.py",
+    "timestamp": "2026-05-31T23:05:18.827420"
+  },
+  {
+    "scenario_id": "sticky_note_photo_reminders_suggestion",
+    "class_name": "StickyNotePhotoRemindersSuggestion",
+    "description": "Agent turns a sticky-note attachment into three dated reminders.\n\nThe user attaches a sprint-plan sticky-note photo to an Inbox note. Task titles,\nowners, and due dates appear only on the image. The assistant must:\n1. Read the note and inspect the attachment (vision).\n2. Ask one proactive accept/reject question before any reminder writes.\n3. If accepted, create reminders for each extracted due date.\n\nConstraints:\n- Proactive permission before reminder writes.\n- User responses are accept/reject only.\n- No AUI user-input trigger.\n- Reminder text does not carry the task/date details (those are read from the image).",
+    "apps": [
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface",
+      "SandboxLocalFileSystem",
+      "StatefulNotesApp",
+      "StatefulReminderApp"
+    ],
+    "source_path": "pare/scenarios/multimodal_benchmark/sticky_note_photo_reminders_suggestion.py",
+    "timestamp": "2026-05-31T23:05:18.828048"
+  },
+  {
+    "scenario_id": "ticket_stub_photo_expense_calendar_note_suggestion",
+    "class_name": "TicketStubPhotoExpenseCalendarNoteSuggestion",
+    "description": "Agent reimburses a company movie ticket by replying to HR with a stub photo from Album.\n\nHR already emailed about the company movie outing: keep your ticket stub after the\nscreening and reply to that email for reimbursement. A reminder nudges the user to\nsubmit reimbursement. The assistant must:\n1. Read the HR reimbursement email and the due reminder.\n2. Find and visually inspect the ticket stub photo in Camera Roll.\n3. Propose replying to HR with the stub photo attached.\n4. Send the reply only after accept/reject acceptance.\n\nConstraints:\n- Proactive permission before sending email.\n- User responses are accept/reject only.\n- No AUI user-input trigger.\n- Reminder text must not carry the movie title from the stub.",
+    "apps": [
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface",
+      "SandboxLocalFileSystem",
+      "StatefulAlbumApp",
+      "StatefulEmailApp",
+      "StatefulReminderApp"
+    ],
+    "source_path": "pare/scenarios/multimodal_benchmark/ticket_stub_photo_expense_calendar_note.py",
+    "timestamp": "2026-05-31T23:05:18.828871"
+  },
+  {
+    "scenario_id": "whiteboard_photo_minutes_todo_suggestion",
+    "class_name": "WhiteboardPhotoMinutesTodoSuggestion",
+    "description": "Agent converts whiteboard action items into a note and reminder workflow.\n\nA meeting whiteboard photo arrives as an email attachment. The assistant must:\n1. Read the message and inspect the image first.\n2. Extract action items, owners, and due dates from the whiteboard content.\n3. Before any write/action operation, ask one proactive accept/reject permission question.\n4. If accepted, create a structured Work note and the follow-up reminders directly.",
+    "apps": [
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface",
+      "SandboxLocalFileSystem",
+      "StatefulEmailApp",
+      "StatefulNotesApp",
+      "StatefulReminderApp"
+    ],
+    "source_path": "pare/scenarios/multimodal_benchmark/whiteboard_photo_minutes_todo_suggestion.py",
+    "timestamp": "2026-05-31T23:05:18.829548"
+  },
+  {
+    "scenario_id": "bob_indoor_venue_photos_share",
+    "class_name": "BobIndoorVenuePhotosShare",
+    "description": "Agent shares indoor venue photos with Bob after he asks via Messages following a garden wedding venue tour.\n\nThe device owner just returned from a garden wedding venue tour. Bob messages\nasking how the tour went and specifically requests the **indoor** shots \u2014 the\ndining tables and the indoor reception area (not the outdoor garden photos, which\nhe can already picture). The Camera Roll has six of today's tour photos with\ngeneric ``IMG_*.jpg`` names and capture timestamps only (no captions or tags).\nThree are indoor dining/ballroom shots and three are outdoor garden decoys;\nindoor vs. outdoor cannot be determined from file name or text metadata alone.\nThe assistant must:\n1. Read Bob's incoming message and infer the indoor-only request.\n2. Filter the Camera Roll to **today's** photos via ``list_photos(..., taken_on=...)``.\n3. **View** candidate photos and use vision to pick the indoor dining/reception shots.\n4. Propose sending those indoor photos to Bob, then attach after user acceptance.\n\nPlace six ``IMG_*.jpg`` files under ``assets/bob_indoor_venue_photos_share/``\n(see ``PHOTO_FIXTURES``). Entries with ``indoor=True`` are sent to Bob in the\noracle. This scenario exercises multimodal photo filtering in Album,\nvision-based indoor/outdoor discrimination against same-day decoys, and gated\nphoto sharing via Messages. Constraints:\n- Ask one proactive accept/reject question before messaging Bob.\n- Bob only asks the user to send photos; he must not request folder creation, photo moves, or any local reorganization.\n- User responses are limited to accept/reject style.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulAlbumApp",
+      "StatefulMessagingApp",
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface"
+    ],
+    "timestamp": "2026-07-13T05:37:00.683171",
+    "source_path": "pare/scenarios/multimodal_benchmark/BobIndoorVenuePhotosShare.py"
+  }
+]

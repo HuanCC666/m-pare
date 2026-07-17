@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import inspect
 import logging
+import os
 from collections.abc import Iterable  # noqa: TC003
 from importlib import import_module
 from pathlib import Path
@@ -18,6 +19,11 @@ from pare.apps.core import AppState
 from pare.apps.notification_templates import NOTIFICATION_TEMPLATES
 from pare.scenarios.generator.agent.scenario_generating_agent_orchestrator import (
     ScenarioGeneratingAgentOrchestrator,
+)
+from pare.scenarios.generator.assets import (
+    DEFAULT_FIREWORKS_IMAGE_MODEL,
+    DEFAULT_OPENAI_IMAGE_MODEL,
+    resolve_fireworks_api_key,
 )
 from pare.scenarios.generator.prompt.scenario_generating_agent_prompts import (
     APP_IMPORT_INSTRUCTIONS,
@@ -90,8 +96,50 @@ def determine_selected_apps(app_instances: dict[str, object], requested: Iterabl
     valid = [name for name in requested_unique if name in available]
     invalid = sorted(set(requested_unique) - set(valid))
     if invalid:
-        logging.warning("Ignoring unknown apps: %s (available: %s)", ", ".join(invalid), ", ".join(available))
+        logging.warning(f"Ignoring unknown apps: {', '.join(invalid)} (available: {', '.join(available)})")
     return valid or available
+
+
+def validate_asset_provider_args(args: argparse.Namespace) -> None:
+    """Validate asset-provider CLI combinations before generation starts."""
+    if args.asset_provider == "local":
+        if args.asset_manifest_path is None:
+            raise ValueError("--asset-manifest is required when --asset-provider local")
+        return
+    if args.asset_provider == "openai-image":
+        if not os.environ.get("OPENAI_API_KEY"):
+            raise ValueError("--asset-provider openai-image requires OPENAI_API_KEY")
+        return
+    if args.asset_provider == "fireworks-image":
+        if not resolve_fireworks_api_key():
+            raise ValueError(
+                "--asset-provider fireworks-image requires FIREWORKS_API_KEY "
+                "or a FireConnect-stored Fireworks key (`fireconnect login`)"
+            )
+        return
+    raise ValueError(f"Unsupported asset provider: {args.asset_provider}")
+
+
+def resolve_image_model_for_provider(asset_provider: str, image_model: str | None) -> str:
+    """Choose a provider-appropriate default image model when none was supplied."""
+    if image_model:
+        return image_model
+    if asset_provider == "fireworks-image":
+        return DEFAULT_FIREWORKS_IMAGE_MODEL
+    return DEFAULT_OPENAI_IMAGE_MODEL
+
+
+def _prepare_cli_asset_provider_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Resolve image-model defaults and validate asset-provider CLI args."""
+    args.image_model = resolve_image_model_for_provider(args.asset_provider, args.image_model)
+    try:
+        validate_asset_provider_args(args)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.asset_provider == "fireworks-image":
+        key = resolve_fireworks_api_key()
+        if key and not os.environ.get("FIREWORKS_API_KEY"):
+            os.environ["FIREWORKS_API_KEY"] = key
 
 
 def build_tool_descriptions(app_def_scenario: object, target_apps: list[str]) -> str:
@@ -401,7 +449,7 @@ def _gather_oracle_entries(inst: object) -> list[str]:
         try:
             tools = inst.get_tools_with_attribute(attr, tool_type)  # type: ignore[attr-defined]  # naq
         except Exception as exc:
-            logging.debug("Skipping tools for %s due to error: %s", inst, exc)
+            logging.debug(f"Skipping tools for {inst} due to error: {exc}")
             continue
         for tool in tools:
             func_name = getattr(tool, "func_name", None)
@@ -470,8 +518,15 @@ def build_oracle_block(app_instances: dict[str, object], selected_apps: list[str
 def _gather_event_registered_entries(inst: object) -> list[str]:
     entries: list[str] = []
     seen: set[str] = set()
-    for name, member in inspect.getmembers(inst, predicate=callable):
+    for name in dir(inst):
         if name.startswith("_"):
+            continue
+        try:
+            member = getattr(inst, name)
+        except Exception as exc:
+            logging.debug(f"Skipping {inst.__class__.__name__}.{name} while gathering tools due to error: {exc}")
+            continue
+        if not callable(member):
             continue
         method = member
         if not getattr(method, "__event_registered__", False):
@@ -533,7 +588,7 @@ def _gather_event_registered_brief_entries(inst: object) -> list[str]:
         try:
             tools = inst.get_tools_with_attribute(attr, tool_type)  # type: ignore[attr-defined]  # naq
         except Exception as exc:
-            logging.debug("Skipping tools for %s due to error: %s", inst, exc)
+            logging.debug(f"Skipping tools for {inst} due to error: {exc}")
             continue
         for tool in tools:
             func_name = getattr(tool, "func_name", None)
@@ -709,19 +764,58 @@ def main() -> None:
         help="If set, skip LLM calls and print the prompts for all agents instead.",
     )
     parser.add_argument(
+        "--asset-manifest",
+        dest="asset_manifest_path",
+        type=Path,
+        default=None,
+        help="Optional local JSON manifest of image assets to resolve for multimodal scenarios.",
+    )
+    parser.add_argument(
+        "--asset-provider",
+        dest="asset_provider",
+        choices=["local", "openai-image", "fireworks-image"],
+        default="local",
+        help="Visual asset provider to use. Defaults to local, which requires --asset-manifest.",
+    )
+    parser.add_argument(
+        "--asset-dir",
+        dest="asset_dir",
+        type=Path,
+        default=None,
+        help="Optional output directory for resolved local image assets.",
+    )
+    parser.add_argument(
+        "--image-model",
+        dest="image_model",
+        default=None,
+        help=(
+            "Image model for generated assets. Defaults to "
+            f"{DEFAULT_OPENAI_IMAGE_MODEL} for openai-image and "
+            f"{DEFAULT_FIREWORKS_IMAGE_MODEL} for fireworks-image."
+        ),
+    )
+    parser.add_argument(
+        "--image-generation-max-retries",
+        dest="image_generation_max_retries",
+        type=int,
+        default=1,
+        help="Maximum image generation attempts per asset. Defaults to 1.",
+    )
+    parser.add_argument(
         "--apps",
         dest="selected_apps",
         nargs="*",
-        default=["StatefulMessagingApp", "StatefulContactsApp", "StatefulCalendarApp", "StatefulEmailApp"],
+        default=["SandboxLocalFileSystem", "StatefulEmailApp", "StatefulAlbumApp", "StatefulShoppingApp"],
         help=(
             "Explicit list of app class names to include (PAREAgentUserInterface and "
-            "HomeScreenSystemApp are always available). Defaults to all apps in the app definition scenario."
+            "HomeScreenSystemApp are always available). Defaults to multimodal-friendly Files, Email, Album, and Shopping apps."
         ),
     )
     args = parser.parse_args()
 
     # Load environment variables
     load_dotenv()
+    _prepare_cli_asset_provider_args(parser, args)
 
     app_def_scenario = ScenarioWithAllPAREApps()
     app_def_scenario.initialize()
@@ -757,6 +851,11 @@ def main() -> None:
             debug_prompts=args.debug_prompts,
             resume_from_step2=args.resume_from_step2,
             resume_from_step=args.resume_from_step,
+            asset_manifest_path=args.asset_manifest_path,
+            asset_dir=args.asset_dir,
+            asset_provider=args.asset_provider,
+            image_model=args.image_model,
+            image_generation_max_retries=args.image_generation_max_retries,
         )
         try:
             result = agent.run()
