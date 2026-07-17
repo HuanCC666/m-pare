@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +11,7 @@ from claude_agent_sdk import (
     ClaudeSDKClient,
     HookContext,
     HookMatcher,
+    ResultMessage,
     TextBlock,
 )
 
@@ -36,6 +37,65 @@ class ClaudeAgentRuntimeConfig:
     allowed_tools: list[str]
     permission_mode: str = "acceptEdits"
     filesystem: ClaudeFilesystemConfig | None = None
+    usage_sink: list[dict[str, Any]] | None = None
+
+
+@dataclass
+class ClaudeCallResult:
+    """Text response plus optional SDK usage/cost metadata for one query."""
+
+    text: str
+    usage: dict[str, Any] = field(default_factory=dict)
+
+
+def summarize_usage_records(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate per-call usage records into a run-level cost summary."""
+    total_cost = 0.0
+    cost_known = False
+    usage_totals: dict[str, float] = {}
+    for record in records:
+        cost = record.get("total_cost_usd")
+        if isinstance(cost, (int, float)):
+            total_cost += float(cost)
+            cost_known = True
+        usage = record.get("usage") or {}
+        if isinstance(usage, dict):
+            for key, value in usage.items():
+                if isinstance(value, (int, float)):
+                    usage_totals[key] = usage_totals.get(key, 0.0) + float(value)
+    return {
+        "calls": len(records),
+        "total_cost_usd": total_cost if cost_known else None,
+        "usage_totals": usage_totals,
+        "note": (
+            "total_cost_usd is the Claude Agent SDK client-side estimate "
+            "(often Anthropic-rate equivalent). With FireConnect/Fireworks routing, "
+            "treat it as a relative estimate unless you apply provider-specific pricing."
+        ),
+        "calls_detail": records,
+    }
+
+
+def _usage_record_from_result(
+    message: ResultMessage,
+    *,
+    step_tag: str,
+    iteration: int,
+) -> dict[str, Any]:
+    """Normalize ResultMessage cost/usage fields for trajectory persistence."""
+    return {
+        "step_tag": step_tag,
+        "iteration": iteration,
+        "total_cost_usd": message.total_cost_usd,
+        "usage": message.usage,
+        "model_usage": message.model_usage,
+        "duration_ms": message.duration_ms,
+        "duration_api_ms": message.duration_api_ms,
+        "num_turns": message.num_turns,
+        "session_id": message.session_id,
+        "is_error": message.is_error,
+        "subtype": message.subtype,
+    }
 
 
 async def _async_run_claude(  # noqa: C901
@@ -45,8 +105,8 @@ async def _async_run_claude(  # noqa: C901
     config: ClaudeAgentRuntimeConfig,
     step_tag: str,
     iteration: int,
-) -> str:
-    """Execute a single Claude Code call and return concatenated text blocks."""
+) -> ClaudeCallResult:
+    """Execute a single Claude Code call and return text plus usage metadata."""
     hooks: dict[str, list[HookMatcher]] | None = None
     if config.filesystem is not None:
         filesystem = config.filesystem
@@ -105,18 +165,28 @@ async def _async_run_claude(  # noqa: C901
     async with ClaudeSDKClient(options=options) as client:
         await client.query(prompt, session_id=f"{step_tag}-{iteration}")
         text_chunks: list[str] = []
+        usage_record: dict[str, Any] = {}
 
         async for message in client.receive_response():
             if isinstance(message, AssistantMessage):
                 for block in message.content:
                     if isinstance(block, TextBlock):
                         text_chunks.append(block.text)
+            elif isinstance(message, ResultMessage):
+                usage_record = _usage_record_from_result(
+                    message,
+                    step_tag=step_tag,
+                    iteration=iteration,
+                )
 
-        return "".join(text_chunks).strip()
+        if usage_record and config.usage_sink is not None:
+            config.usage_sink.append(usage_record)
+
+        return ClaudeCallResult(text="".join(text_chunks).strip(), usage=usage_record)
 
     # Fallback to satisfy static analyzers; normal execution should always
     # return from inside the context block above.
-    return ""
+    return ClaudeCallResult(text="")
 
 
 def _conversation_to_prompt(
@@ -149,7 +219,7 @@ def run_claude_conversation(
     config: ClaudeAgentRuntimeConfig,
     step_tag: str,
     iteration: int,
-) -> str:
+) -> ClaudeCallResult:
     """Synchronous wrapper to run Claude Code for a given step conversation."""
     prompt = _conversation_to_prompt(conversation, step_tag=step_tag, iteration=iteration)
     return asyncio.run(

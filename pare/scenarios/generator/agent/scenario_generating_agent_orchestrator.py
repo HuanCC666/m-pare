@@ -18,7 +18,9 @@ from pare.benchmark.scenario_loader import load_scenarios_from_registry
 from pare.multi_scenario_runner import MultiScenarioRunner
 from pare.scenarios.config import MultiScenarioRunnerConfig
 from pare.scenarios.generator.assets import (
-    DEFAULT_IMAGE_GENERATION_MODEL,
+    DEFAULT_FIREWORKS_IMAGE_MODEL,
+    DEFAULT_OPENAI_IMAGE_MODEL,
+    FireworksImageAssetProvider,
     ImageGenerationClient,
     LocalAssetProvider,
     OpenAIImageAssetProvider,
@@ -30,7 +32,11 @@ from pare.scenarios.generator.prompt.scenario_generating_agent_prompts import (
     configure_dynamic_context,
 )
 
-from .claude_backend import ClaudeAgentRuntimeConfig, ClaudeFilesystemConfig
+from .claude_backend import (
+    ClaudeAgentRuntimeConfig,
+    ClaudeFilesystemConfig,
+    summarize_usage_records,
+)
 from .scenario_uniqueness_agent import ScenarioUniquenessCheckAgent
 from .step_agents import StepEditAgent, StepResult
 
@@ -69,7 +75,7 @@ class ScenarioGeneratingAgentOrchestrator:
         asset_manifest_path: str | Path | None = None,
         asset_dir: str | Path | None = None,
         asset_provider: str = "local",
-        image_model: str = DEFAULT_IMAGE_GENERATION_MODEL,
+        image_model: str | None = None,
         image_generation_max_retries: int = 1,
         image_client: ImageGenerationClient | None = None,
         claude_filesystem_config: ClaudeFilesystemConfig | None = None,
@@ -135,7 +141,14 @@ class ScenarioGeneratingAgentOrchestrator:
         self.asset_manifest_path = Path(asset_manifest_path) if asset_manifest_path is not None else None
         self.asset_dir = Path(asset_dir) if asset_dir is not None else self.output_dir / "assets"
         self.asset_provider = asset_provider
-        self.image_model = image_model
+        if image_model is None:
+            self.image_model = (
+                DEFAULT_FIREWORKS_IMAGE_MODEL
+                if asset_provider == "fireworks-image"
+                else DEFAULT_OPENAI_IMAGE_MODEL
+            )
+        else:
+            self.image_model = image_model
         self.image_generation_max_retries = max(1, image_generation_max_retries)
         self.image_client = image_client
         # Declarative filesystem policy for Claude Agent SDK usage. Enforcement
@@ -159,6 +172,9 @@ class ScenarioGeneratingAgentOrchestrator:
             self.scenario_metadata_path_for_prompt = filtered_path
             self._historical_descriptions_for_prompt = filtered_entries
 
+        # Shared sink for Claude Agent SDK usage/cost records across all step calls.
+        self._llm_usage_records: list[dict[str, Any]] = []
+
         # Per-step Claude runtime configurations. Narrative and uniqueness
         # checks do not need code-editing tools, while Steps 2-4 use Read/Write
         # to modify the seed_scenario file.
@@ -167,18 +183,21 @@ class ScenarioGeneratingAgentOrchestrator:
             allowed_tools=["Read"],
             permission_mode="acceptEdits",
             filesystem=self.claude_filesystem_config,
+            usage_sink=self._llm_usage_records,
         )
         self._claude_config_step1 = ClaudeAgentRuntimeConfig(
             cwd=self.repo_root,
             allowed_tools=["Read"],
             permission_mode="acceptEdits",
             filesystem=self.claude_filesystem_config,
+            usage_sink=self._llm_usage_records,
         )
         self._claude_config_code_steps = ClaudeAgentRuntimeConfig(
             cwd=self.repo_root,
             allowed_tools=["Read", "Write"],
             permission_mode="acceptEdits",
             filesystem=self.claude_filesystem_config,
+            usage_sink=self._llm_usage_records,
         )
 
         if prompt_context is not None:
@@ -584,11 +603,13 @@ class ScenarioGeneratingAgentOrchestrator:
                 # the next run starts from a clean slate.
                 self._export_final_scenario_and_reset()
 
+            cost_summary = self._write_usage_cost_summary()
             logger.info("Multi-step scenario generation pipeline complete.")
             return {
                 "description_path": str(self.scenario_metadata_path),
                 "scenario_file_path": str(self.scenario_file),
                 "trajectory_dir": str(self.trajectory_dir),
+                "cost_summary": cost_summary,
                 "steps": [
                     step1,
                     asset_plan,
@@ -605,6 +626,7 @@ class ScenarioGeneratingAgentOrchestrator:
                 runtime_error = self._last_check_result.runtime_error or not self._last_check_result.validation_reached
                 validation_reached = self._last_check_result.validation_reached
             self._persist_failed_scenario(str(exc), runtime_error=runtime_error, validation_reached=validation_reached)
+            self._write_usage_cost_summary()
             raise
 
     def _maybe_write_filtered_metadata_for_prompt(self) -> tuple[Path | None, list[dict[str, Any]]]:
@@ -645,16 +667,24 @@ class ScenarioGeneratingAgentOrchestrator:
             provider = LocalAssetProvider(manifest_path=self.asset_manifest_path, output_dir=self.asset_dir)
             resolved_assets = provider.resolve_assets()
             manifest_path = str(self.asset_manifest_path)
-        elif self.asset_provider == "openai-image":
+        elif self.asset_provider in {"openai-image", "fireworks-image"}:
             specs = self._parse_visual_asset_specs(asset_plan_content, require_source_path=False)
             if not specs:
                 return ""
-            provider = OpenAIImageAssetProvider(
-                output_dir=self.asset_dir,
-                image_model=self.image_model,
-                image_client=self.image_client,
-                max_retries=self.image_generation_max_retries,
-            )
+            if self.asset_provider == "openai-image":
+                provider = OpenAIImageAssetProvider(
+                    output_dir=self.asset_dir,
+                    image_model=self.image_model,
+                    image_client=self.image_client,
+                    max_retries=self.image_generation_max_retries,
+                )
+            else:
+                provider = FireworksImageAssetProvider(
+                    output_dir=self.asset_dir,
+                    image_model=self.image_model,
+                    image_client=self.image_client,
+                    max_retries=self.image_generation_max_retries,
+                )
             resolved_assets = provider.resolve_assets(specs)
             manifest_path = ""
         else:
@@ -1098,6 +1128,32 @@ class ScenarioGeneratingAgentOrchestrator:
                 handle.write("\n")
         except Exception:  # pragma: no cover - trajectory logging is best-effort
             logger.exception("Failed to append step trajectory for %s", step_label)
+
+    def _write_usage_cost_summary(self) -> dict[str, Any]:
+        """Persist aggregated Claude Agent SDK usage/cost estimates for this run."""
+        summary = summarize_usage_records(self._llm_usage_records)
+        path = self.trajectory_dir / "cost.json"
+        try:
+            path.write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
+        except Exception:  # pragma: no cover - trajectory logging is best-effort
+            logger.exception("Failed to write usage/cost summary to %s", path)
+            return summary
+
+        total = summary.get("total_cost_usd")
+        if total is None:
+            logger.info(
+                "LLM usage summary written to %s (%s calls; no SDK cost estimate available)",
+                path,
+                summary.get("calls", 0),
+            )
+        else:
+            logger.info(
+                "LLM usage summary written to %s (%s calls; estimated total_cost_usd=$%.6f)",
+                path,
+                summary.get("calls", 0),
+                float(total),
+            )
+        return summary
 
     def _export_final_scenario_and_reset(self) -> None:
         """Export the final scenario by class name, then reset the working file.

@@ -357,6 +357,19 @@ _SCENARIO_DESCRIPTION_BODY = textwrap.dedent(
     - A visually grounded action (shopping search, reminder creation, message/email reply, booking plan, etc.) MUST depend on content that cannot be known from filename or text metadata alone.
     - Keep text-heavy visual facts limited unless they are supplied by deterministic/local assets. Do not ask the generator to invent reliable receipt/bill text through a text-only model.
 
+    Socially plausible action ownership (CRITICAL; common failure mode):
+    - Treat the scenario device owner (the PARE user) as the only party who can reasonably authorize mutations of *local private state* on the phone.
+    - Remote / exogenous parties (message senders, email senders, notification originators, other people in a group chat, etc.) MUST NOT ask the device owner
+      to create, rename, move, delete, or reorganize local private artifacts on their behalf.
+      Local-private examples include: Album folders / photo moves, Files paths and local file edits, Notes folders / note moves / local note deletes,
+      local reminders housekeeping that is unrelated to a shared commitment, and similar device-only organization.
+    - Remote parties MAY request socially normal outward actions, such as: send/share content, reply with information, look something up, propose a
+      booking/purchase/calendar change, or otherwise coordinate using shared/communicative channels.
+    - Local organize/mutate tools are allowed only when motivated by the device owner's own goal (explicit user request, or the agent offers local
+      organization *after* fulfilling a share/reply-style request). Do NOT invent a remote trigger whose main ask is "please reorganize your phone."
+    - Prefer redesigning the goal when a candidate narrative would require a remote person to manage someone else's local files/folders
+      (e.g., ask them to send matching photos instead of creating a folder on their device).
+
     Constraints:
     - Treat every historical scenario description in the provided scenario metadata file as a negative example.
     - Your new scenario MUST be clearly and substantively different in trigger, domain, app combination, and cross-app workflow from all prior descriptions.
@@ -365,11 +378,13 @@ _SCENARIO_DESCRIPTION_BODY = textwrap.dedent(
       - When drafting a new scenario, try to exercise MORE of the selected apps' event-registered capabilities by choosing a workflow that uses
         less frequently used / previously untouched tools for those apps (as long as they are real tools listed in the Event-Registered App APIs block).
       - Do NOT invent new methods. Prefer novel but plausible combinations of existing tools over repeating the same small set of patterns.
+      - Socially plausible ownership takes priority over tool diversity: never add local-organization tools just to exercise rare APIs if a remote
+        party would be the one requesting those mutations.
       - App-specific examples (IMPORTANT; do not treat as an exhaustive list):
         - If `StatefulNotesApp` is selected, try to include at least one less-common Notes capability beyond "create + search", such as:
           - updating an existing note (`update_note`)
-          - folder operations (`new_folder`, `rename_folder`, `delete_folder`)
-          - organization actions (`move_note`, `duplicate_note`)
+          - folder operations (`new_folder`, `rename_folder`, `delete_folder`) when the *device owner* wants organization
+          - organization actions (`move_note`, `duplicate_note`) when owner-motivated
           - attachment workflows (`add_attachment_to_note`, `remove_attachment`, `list_attachments`)
         Use these only when they make sense for the trigger and user goal; do not add gratuitous steps.
     - Pattern minimization (IMPORTANT; keep scenarios concise):
@@ -500,7 +515,7 @@ _ASSET_PLANNING_BODY = textwrap.dedent(
     - `kind` should be one of `photo_like`, `document_like`, `screenshot_like`, `product_photo`, or `object_photo`.
     - `source_path` is optional for generated assets but required for local/provided assets.
     - `generation_prompt` must be a safe, concrete image-generation prompt. Keep it photo-like when generation is plausible.
-    - `openai-image` should only generate photo-like assets (`photo_like`, `product_photo`, or `object_photo`) and should not be used
+    - `openai-image` / `fireworks-image` should only generate photo-like assets (`photo_like`, `product_photo`, or `object_photo`) and should not be used
       when exact text, prices, small labels, receipts, bills, screenshots, or handwriting must be reproduced reliably.
     - `filename`, `sandbox_path`, `delivery`, `visual_requirements`, and `ground_truth` must be concrete enough for an `AssetProvider`.
     - Use delivery values such as `email_attachment`, `album_photo`, or `files_display`.
@@ -970,6 +985,8 @@ SCENARIO_DESCRIPTION_USER_PROMPT = textwrap.dedent(
     """\
     Draft a brand-new PARE scenario narrative that is clearly and substantively distinct from ALL prior scenarios.
     Use prior scenarios as negative examples: do NOT reuse the same trigger, goal, cross-app pattern, or domain with only superficial changes.
+    Keep actions socially plausible: remote people may ask the user to share/reply/look up/coordinate, but must not ask them to reorganize
+    local private phone state (folders, file moves, local deletes, etc.) on their behalf.
 
     Historical scenario metadata path (read this file via the Read tool):
     {scenario_metadata_path}

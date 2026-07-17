@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pare.scenarios.multimodal_benchmark.lib.jpeg_for_sandbox import jpeg_bytes_for_sandbox
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from pytest import MonkeyPatch
 
 
@@ -138,3 +139,65 @@ def test_asset_provider_args_validate_openai_key(monkeypatch: MonkeyPatch) -> No
         assert "OPENAI_API_KEY" in str(exc)
     else:
         raise AssertionError("Expected missing OPENAI_API_KEY to fail validation")
+
+
+def test_fireworks_image_provider_uses_default_model_and_fake_client(tmp_path: Path) -> None:
+    """Fireworks FLUX generation should be selectable without network calls in tests."""
+    from pare.scenarios.generator.assets import (
+        DEFAULT_FIREWORKS_IMAGE_MODEL,
+        FireworksImageAssetProvider,
+        VisualAssetSpec,
+        VisualQA,
+    )
+
+    calls: list[tuple[str, str]] = []
+
+    def fake_image_client(*, prompt: str, model: str) -> bytes:
+        calls.append((prompt, model))
+        return b"\xff\xd8generated garden terrace\xff\xd9"
+
+    spec = VisualAssetSpec.from_dict(
+        {
+            "asset_id": "garden_terrace_reference",
+            "filename": "garden_terrace_reference.jpg",
+            "sandbox_path": "/reference/garden_terrace_reference.jpg",
+            "delivery": "album_photo",
+            "kind": "photo_like",
+            "generation_prompt": "A sunny garden terrace venue with outdoor seating.",
+            "visual_requirements": ["garden terrace"],
+            "ground_truth": {"scene": "garden terrace"},
+        },
+        require_source_path=False,
+    )
+    provider = FireworksImageAssetProvider(output_dir=tmp_path / "generated", image_client=fake_image_client)
+
+    resolved = provider.resolve_assets([spec])
+
+    assert calls == [("A sunny garden terrace venue with outdoor seating.", DEFAULT_FIREWORKS_IMAGE_MODEL)]
+    assert resolved[0].provider_metadata["provider"] == "fireworks-image"
+    assert resolved[0].provider_metadata["model"] == DEFAULT_FIREWORKS_IMAGE_MODEL
+    assert resolved[0].resolved_path.read_bytes().startswith(b"\xff\xd8")
+    assert VisualQA().check(resolved).passed is True
+
+
+def test_asset_provider_args_validate_fireworks_key(monkeypatch: MonkeyPatch) -> None:
+    """Fireworks image mode should fail early without a resolvable Fireworks API key."""
+    from argparse import Namespace
+
+    from pare.scenarios.generator import scenario_generator as generator_module
+
+    monkeypatch.delenv("FIREWORKS_API_KEY", raising=False)
+    monkeypatch.setattr(generator_module, "resolve_fireworks_api_key", lambda: None)
+
+    try:
+        generator_module.validate_asset_provider_args(
+            Namespace(
+                asset_provider="fireworks-image",
+                asset_manifest_path=None,
+                image_model="accounts/fireworks/models/flux-1-schnell-fp8",
+            )
+        )
+    except ValueError as exc:
+        assert "FIREWORKS_API_KEY" in str(exc)
+    else:
+        raise AssertionError("Expected missing Fireworks API key to fail validation")

@@ -38,6 +38,8 @@ def test_generator_prompts_are_multimodal_by_default() -> None:
 
     assert "pare/scenarios/multimodal_benchmark" in prompts.GLOBAL_CONTEXT_PROMPT
     assert "VisualAssetSpec" in prompts.SCENARIO_DESCRIPTION_SYSTEM_PROMPT
+    assert "Socially plausible action ownership" in prompts.SCENARIO_DESCRIPTION_SYSTEM_PROMPT
+    assert "must not ask them to reorganize" in prompts.SCENARIO_DESCRIPTION_USER_PROMPT
     assert "rice_cooker_photo_cart_suggestion.py" in prompts.SCENARIO_DESCRIPTION_USER_PROMPT
     assert "calendar_conflict_urgent_reschedule.py" not in prompts.SCENARIO_DESCRIPTION_SYSTEM_PROMPT
     assert "image inspection" in prompts.VALIDATION_SYSTEM_PROMPT.lower()

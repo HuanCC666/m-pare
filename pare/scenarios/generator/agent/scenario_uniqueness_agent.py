@@ -8,7 +8,7 @@ from pare.scenarios.generator.prompt.scenario_generating_agent_prompts import (
     SCENARIO_UNIQUENESS_USER_PROMPT,
 )
 
-from .claude_backend import ClaudeAgentRuntimeConfig, run_claude_conversation
+from .claude_backend import ClaudeAgentRuntimeConfig, ClaudeCallResult, run_claude_conversation
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ class ScenarioUniquenessCheckAgent:
         self.scenario_metadata_path = scenario_metadata_path or "pare/scenarios/scenario_metadata.json"
         self.debug_prompts = debug_prompts
         self._claude_config = claude_runtime_config
+        self.last_usage: dict[str, Any] = {}
 
     def evaluate(self, scenario_description: str) -> tuple[bool, str]:
         """Return (is_unique, verdict_text)."""
@@ -41,14 +42,16 @@ class ScenarioUniquenessCheckAgent:
                 system_prompt=SCENARIO_UNIQUENESS_SYSTEM_PROMPT,
                 user_prompt=user_prompt,
             )
+            self.last_usage = {}
             verdict = "[DEBUG MODE] Scenario uniqueness check skipped."
             return True, verdict
-        verdict = self._invoke_llm(
+        call = self._invoke_llm(
             system_prompt=SCENARIO_UNIQUENESS_SYSTEM_PROMPT,
             user_prompt=user_prompt,
             trace_tag="multi_step_step1_uniqueness",
         )
-        text = verdict.strip()
+        self.last_usage = call.usage
+        text = call.text.strip()
         # Primary rule: look at the FIRST non-empty line so any later
         # "Comparison/Key overlap" analysis can't override a clear verdict.
         first_line = ""
@@ -96,7 +99,7 @@ class ScenarioUniquenessCheckAgent:
             lines.append(f"- {description} (logged {timestamp})")
         return "\n".join(lines)
 
-    def _invoke_llm(self, *, system_prompt: str, user_prompt: str, trace_tag: str) -> str:
+    def _invoke_llm(self, *, system_prompt: str, user_prompt: str, trace_tag: str) -> ClaudeCallResult:
         if self._claude_config is None:
             raise TypeError("Scenario uniqueness check is misconfigured: missing Claude runtime config.")
         conversation = [

@@ -16,7 +16,7 @@ from pare.scenarios.generator.prompt.scenario_generating_agent_prompts import (
 # Import the underlying `prompts` module directly so that updates from
 # `configure_dynamic_context()` (which mutates module-level globals) are
 # visible here.
-from .claude_backend import ClaudeAgentRuntimeConfig, run_claude_conversation
+from .claude_backend import ClaudeAgentRuntimeConfig, ClaudeCallResult, run_claude_conversation
 
 logger = logging.getLogger(__name__)
 
@@ -76,60 +76,25 @@ class BaseStepAgent:
                 conversation=conversation,
                 debug_response_builder=debug_response_builder,
             )
+        usage_calls: list[dict[str, Any]] = []
         for iteration in range(1, self.max_iterations + 1):
-            response = self._invoke_llm(conversation, iteration)
+            call = self._invoke_llm(conversation, iteration)
+            response = call.text
             assistant_msg = {"role": "assistant", "content": response}
             notes: dict[str, Any] = {"iteration": iteration}
+            if call.usage:
+                usage_calls.append(call.usage)
+                notes["llm_usage"] = call.usage
 
-            if self.uniqueness_agent is not None:
-                unique, verdict = self.uniqueness_agent.evaluate(response)
-                notes["uniqueness_verdict"] = verdict
-                if not unique:
-                    logger.info(
-                        "%s uniqueness rejection (iteration %s): %s\nCandidate description:\n%s",
-                        self.name,
-                        iteration,
-                        verdict,
-                        response,
-                    )
-                    conversation.extend([
-                        assistant_msg,
-                        {
-                            "role": "user",
-                            "content": f"Uniqueness review failed: {verdict}",
-                        },
-                    ])
-                    continue
-
-            check_passed = True
-            feedback = ""
-            if check_callback is not None:
-                check_passed, feedback = check_callback(response, iteration)
-                if feedback:
-                    notes["check_feedback"] = feedback
-
-            if not check_passed:
-                logger.warning(
-                    "%s check_callback failed at iteration %s. Feedback:\n%s",
-                    self.name,
-                    iteration,
-                    feedback,
-                )
-                conversation.extend([
-                    assistant_msg,
-                    {
-                        "role": "user",
-                        "content": feedback or "Check failed; please revise.",
-                    },
-                ])
+            if not self._handle_uniqueness(response, notes, usage_calls, conversation, assistant_msg, iteration):
+                continue
+            if not self._handle_check(response, notes, conversation, assistant_msg, iteration, check_callback):
                 continue
 
             full_conversation = [*conversation, assistant_msg]
-            logger.info(
-                "%s succeeded at iteration %s",
-                self.name,
-                iteration,
-            )
+            if usage_calls:
+                notes["llm_usage_calls"] = usage_calls
+            logger.info("%s succeeded at iteration %s", self.name, iteration)
             return StepResult(
                 name=self.name,
                 content=response,
@@ -139,7 +104,68 @@ class BaseStepAgent:
             )
         raise StepExecutionError(f"{self.name} failed after {self.max_iterations} attempts.")
 
-    def _invoke_llm(self, conversation: list[dict[str, str]], iteration: int) -> str:
+    def _handle_uniqueness(
+        self,
+        response: str,
+        notes: dict[str, Any],
+        usage_calls: list[dict[str, Any]],
+        conversation: list[dict[str, str]],
+        assistant_msg: dict[str, str],
+        iteration: int,
+    ) -> bool:
+        """Return True when uniqueness passed (or no uniqueness agent)."""
+        if self.uniqueness_agent is None:
+            return True
+        unique, verdict = self.uniqueness_agent.evaluate(response)
+        notes["uniqueness_verdict"] = verdict
+        uniqueness_usage = getattr(self.uniqueness_agent, "last_usage", None)
+        if isinstance(uniqueness_usage, dict) and uniqueness_usage:
+            usage_calls.append(uniqueness_usage)
+        if unique:
+            return True
+        logger.info(
+            "%s uniqueness rejection (iteration %s): %s\nCandidate description:\n%s",
+            self.name,
+            iteration,
+            verdict,
+            response,
+        )
+        conversation.extend([
+            assistant_msg,
+            {"role": "user", "content": f"Uniqueness review failed: {verdict}"},
+        ])
+        return False
+
+    def _handle_check(
+        self,
+        response: str,
+        notes: dict[str, Any],
+        conversation: list[dict[str, str]],
+        assistant_msg: dict[str, str],
+        iteration: int,
+        check_callback: Callable[[str, int], tuple[bool, str]] | None,
+    ) -> bool:
+        """Return True when the optional check callback passed (or is absent)."""
+        if check_callback is None:
+            return True
+        check_passed, feedback = check_callback(response, iteration)
+        if feedback:
+            notes["check_feedback"] = feedback
+        if check_passed:
+            return True
+        logger.warning(
+            "%s check_callback failed at iteration %s. Feedback:\n%s",
+            self.name,
+            iteration,
+            feedback,
+        )
+        conversation.extend([
+            assistant_msg,
+            {"role": "user", "content": feedback or "Check failed; please revise."},
+        ])
+        return False
+
+    def _invoke_llm(self, conversation: list[dict[str, str]], iteration: int) -> ClaudeCallResult:
         if self._claude_config is None:
             raise StepExecutionError(f"{self.name} is misconfigured: missing Claude runtime config.")
         return run_claude_conversation(

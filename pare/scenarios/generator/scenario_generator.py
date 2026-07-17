@@ -20,7 +20,11 @@ from pare.apps.notification_templates import NOTIFICATION_TEMPLATES
 from pare.scenarios.generator.agent.scenario_generating_agent_orchestrator import (
     ScenarioGeneratingAgentOrchestrator,
 )
-from pare.scenarios.generator.assets import DEFAULT_IMAGE_GENERATION_MODEL
+from pare.scenarios.generator.assets import (
+    DEFAULT_FIREWORKS_IMAGE_MODEL,
+    DEFAULT_OPENAI_IMAGE_MODEL,
+    resolve_fireworks_api_key,
+)
 from pare.scenarios.generator.prompt.scenario_generating_agent_prompts import (
     APP_IMPORT_INSTRUCTIONS,
     build_app_initialization_block,
@@ -106,7 +110,36 @@ def validate_asset_provider_args(args: argparse.Namespace) -> None:
         if not os.environ.get("OPENAI_API_KEY"):
             raise ValueError("--asset-provider openai-image requires OPENAI_API_KEY")
         return
+    if args.asset_provider == "fireworks-image":
+        if not resolve_fireworks_api_key():
+            raise ValueError(
+                "--asset-provider fireworks-image requires FIREWORKS_API_KEY "
+                "or a FireConnect-stored Fireworks key (`fireconnect login`)"
+            )
+        return
     raise ValueError(f"Unsupported asset provider: {args.asset_provider}")
+
+
+def resolve_image_model_for_provider(asset_provider: str, image_model: str | None) -> str:
+    """Choose a provider-appropriate default image model when none was supplied."""
+    if image_model:
+        return image_model
+    if asset_provider == "fireworks-image":
+        return DEFAULT_FIREWORKS_IMAGE_MODEL
+    return DEFAULT_OPENAI_IMAGE_MODEL
+
+
+def _prepare_cli_asset_provider_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Resolve image-model defaults and validate asset-provider CLI args."""
+    args.image_model = resolve_image_model_for_provider(args.asset_provider, args.image_model)
+    try:
+        validate_asset_provider_args(args)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.asset_provider == "fireworks-image":
+        key = resolve_fireworks_api_key()
+        if key and not os.environ.get("FIREWORKS_API_KEY"):
+            os.environ["FIREWORKS_API_KEY"] = key
 
 
 def build_tool_descriptions(app_def_scenario: object, target_apps: list[str]) -> str:
@@ -740,7 +773,7 @@ def main() -> None:
     parser.add_argument(
         "--asset-provider",
         dest="asset_provider",
-        choices=["local", "openai-image"],
+        choices=["local", "openai-image", "fireworks-image"],
         default="local",
         help="Visual asset provider to use. Defaults to local, which requires --asset-manifest.",
     )
@@ -754,15 +787,19 @@ def main() -> None:
     parser.add_argument(
         "--image-model",
         dest="image_model",
-        default=DEFAULT_IMAGE_GENERATION_MODEL,
-        help=f"OpenAI image model to use with --asset-provider openai-image. Defaults to {DEFAULT_IMAGE_GENERATION_MODEL}.",
+        default=None,
+        help=(
+            "Image model for generated assets. Defaults to "
+            f"{DEFAULT_OPENAI_IMAGE_MODEL} for openai-image and "
+            f"{DEFAULT_FIREWORKS_IMAGE_MODEL} for fireworks-image."
+        ),
     )
     parser.add_argument(
         "--image-generation-max-retries",
         dest="image_generation_max_retries",
         type=int,
         default=1,
-        help="Maximum OpenAI image generation attempts per asset. Defaults to 1.",
+        help="Maximum image generation attempts per asset. Defaults to 1.",
     )
     parser.add_argument(
         "--apps",
@@ -778,10 +815,7 @@ def main() -> None:
 
     # Load environment variables
     load_dotenv()
-    try:
-        validate_asset_provider_args(args)
-    except ValueError as exc:
-        parser.error(str(exc))
+    _prepare_cli_asset_provider_args(parser, args)
 
     app_def_scenario = ScenarioWithAllPAREApps()
     app_def_scenario.initialize()

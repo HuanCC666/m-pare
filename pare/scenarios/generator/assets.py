@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import subprocess
 from base64 import b64decode
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
@@ -12,7 +14,35 @@ from pathlib import Path
 from typing import Any
 
 _SUPPORTED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp", "heic", "bmp"}
-DEFAULT_IMAGE_GENERATION_MODEL = "gpt-image-2"
+DEFAULT_OPENAI_IMAGE_MODEL = "gpt-image-2"
+DEFAULT_FIREWORKS_IMAGE_MODEL = "accounts/fireworks/models/flux-1-schnell-fp8"
+DEFAULT_IMAGE_GENERATION_MODEL = DEFAULT_OPENAI_IMAGE_MODEL
+_FIREWORKS_IMAGE_BASE_URL = "https://api.fireworks.ai/inference/v1/workflows"
+
+
+def resolve_fireworks_api_key() -> str | None:
+    """Resolve a Fireworks API key from the environment or FireConnect keychain."""
+    env_key = os.environ.get("FIREWORKS_API_KEY")
+    if env_key:
+        return env_key
+    try:
+        fireconnect = shutil.which("fireconnect")
+        if fireconnect is None:
+            home_bin = Path.home() / ".local" / "bin" / "fireconnect"
+            fireconnect = str(home_bin) if home_bin.exists() else None
+        if fireconnect is None:
+            return None
+        result = subprocess.run(  # noqa: S603
+            [fireconnect, "key", "export", "--stored-only"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except Exception:
+        return None
+    key = result.stdout.strip()
+    return key or None
 
 
 @dataclass(frozen=True)
@@ -248,6 +278,136 @@ class OpenAIImageAssetProvider:
         if url:
             raise RuntimeError("OpenAI image response returned a URL; configure the client for base64 image data")
         raise RuntimeError("OpenAI image response did not include image bytes")
+
+
+class FireworksImageAssetProvider:
+    """Generate photo-like visual assets with Fireworks FLUX workflows."""
+
+    def __init__(
+        self,
+        *,
+        output_dir: str | Path,
+        image_model: str = DEFAULT_FIREWORKS_IMAGE_MODEL,
+        image_client: ImageGenerationClient | None = None,
+        max_retries: int = 1,
+        api_key: str | None = None,
+    ) -> None:
+        """Configure output path, model, and optional fakeable image client."""
+        self.output_dir = Path(output_dir)
+        self.image_model = self._normalize_model_id(image_model)
+        self.image_client = image_client
+        self.max_retries = max(1, max_retries)
+        self.api_key = api_key
+
+    def resolve_assets(self, specs: list[VisualAssetSpec]) -> list[ResolvedVisualAsset]:
+        """Generate all requested assets and return resolved specs."""
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        resolved: list[ResolvedVisualAsset] = []
+        for spec in specs:
+            self._validate_generatable(spec)
+            target = self.output_dir / spec.filename
+            image_bytes = self._generate_image_bytes(spec)
+            target.write_bytes(image_bytes)
+            asset = ResolvedVisualAsset(
+                asset_id=spec.asset_id,
+                filename=spec.filename,
+                source_path=target,
+                sandbox_path=spec.sandbox_path,
+                delivery=spec.delivery,
+                ground_truth=spec.ground_truth,
+                visual_requirements=spec.visual_requirements,
+                kind=spec.kind,
+                generation_prompt=spec.generation_prompt,
+                requires_exact_text=spec.requires_exact_text,
+                resolved_path=target,
+                provider_metadata={
+                    "provider": "fireworks-image",
+                    "model": self.image_model,
+                    "generation_prompt": self._prompt_for_spec(spec),
+                    "generated_at": datetime.now(UTC).isoformat(),
+                },
+            )
+            self._write_asset_metadata(asset)
+            resolved.append(asset)
+        return resolved
+
+    @staticmethod
+    def _write_asset_metadata(asset: ResolvedVisualAsset) -> None:
+        metadata_path = asset.resolved_path.with_name(f"{asset.resolved_path.name}.metadata.json")
+        metadata_path.write_text(json.dumps(asdict(asset), indent=2, default=str), encoding="utf-8")
+
+    @staticmethod
+    def _validate_generatable(spec: VisualAssetSpec) -> None:
+        if spec.requires_exact_text:
+            raise ValueError(f"{spec.asset_id}: exact text assets should use local/deterministic assets")
+        if spec.kind not in {"photo_like", "product_photo", "object_photo"}:
+            raise ValueError(f"{spec.asset_id}: fireworks-image supports photo-like assets only, got {spec.kind!r}")
+
+    @staticmethod
+    def _normalize_model_id(image_model: str) -> str:
+        model = image_model.strip()
+        if model.startswith("accounts/"):
+            return model
+        return f"accounts/fireworks/models/{model}"
+
+    def _generate_image_bytes(self, spec: VisualAssetSpec) -> bytes:
+        prompt = self._prompt_for_spec(spec)
+        last_error: Exception | None = None
+        for _attempt in range(self.max_retries):
+            try:
+                if self.image_client is not None:
+                    return self.image_client(prompt=prompt, model=self.image_model)
+                return self._call_fireworks_flux_api(prompt=prompt)
+            except Exception as exc:
+                last_error = exc
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError(f"{spec.asset_id}: image generation failed without an exception")
+
+    @staticmethod
+    def _prompt_for_spec(spec: VisualAssetSpec) -> str:
+        if spec.generation_prompt:
+            return spec.generation_prompt
+        requirements = ", ".join(spec.visual_requirements)
+        return requirements or f"Photo-like image for asset {spec.asset_id}"
+
+    def _call_fireworks_flux_api(self, *, prompt: str) -> bytes:
+        import httpx
+
+        api_key = self.api_key or resolve_fireworks_api_key()
+        if not api_key:
+            raise RuntimeError("Fireworks image generation requires FIREWORKS_API_KEY")
+
+        url = f"{_FIREWORKS_IMAGE_BASE_URL}/{self.image_model}/text_to_image"
+        response = httpx.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "Accept": "image/jpeg",
+            },
+            json={"prompt": prompt, "aspect_ratio": "1:1"},
+            timeout=120.0,
+        )
+        if response.status_code == 401:
+            raise RuntimeError(
+                "Fireworks rejected image generation with 401 Unauthorized. "
+                "This Fireworks key can authenticate, but the account may not have "
+                "access to FLUX image models. Confirm flux-1-schnell-fp8 is enabled "
+                "for the account at https://fireworks.ai, or set FIREWORKS_API_KEY "
+                "to an API key that can call the text_to_image workflow."
+            )
+        response.raise_for_status()
+        content_type = response.headers.get("content-type", "")
+        if "application/json" in content_type:
+            payload = response.json()
+            b64_json = payload.get("image") or payload.get("b64_json")
+            if b64_json:
+                return b64decode(b64_json)
+            raise RuntimeError("Fireworks image response JSON did not include image bytes")
+        if not response.content:
+            raise RuntimeError("Fireworks image response did not include image bytes")
+        return response.content
 
 
 class VisualQA:
