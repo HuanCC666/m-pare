@@ -216,5 +216,19 @@
     ],
     "source_path": "pare/scenarios/multimodal_benchmark/whiteboard_photo_minutes_todo_suggestion.py",
     "timestamp": "2026-05-31T23:05:18.829548"
+  },
+  {
+    "scenario_id": "bob_indoor_venue_photos_share",
+    "class_name": "BobIndoorVenuePhotosShare",
+    "description": "Agent shares indoor venue photos with Bob after he asks via Messages following a garden wedding venue tour.\n\nThe device owner just returned from a garden wedding venue tour. Bob messages\nasking how the tour went and specifically requests the **indoor** shots \u2014 the\ndining tables and the indoor reception area (not the outdoor garden photos, which\nhe can already picture). The Camera Roll has six of today's tour photos with\ngeneric ``IMG_*.jpg`` names and capture timestamps only (no captions or tags).\nThree are indoor dining/ballroom shots and three are outdoor garden decoys;\nindoor vs. outdoor cannot be determined from file name or text metadata alone.\nThe assistant must:\n1. Read Bob's incoming message and infer the indoor-only request.\n2. Filter the Camera Roll to **today's** photos via ``list_photos(..., taken_on=...)``.\n3. **View** candidate photos and use vision to pick the indoor dining/reception shots.\n4. Propose sending those indoor photos to Bob, then attach after user acceptance.\n\nPlace six ``IMG_*.jpg`` files under ``assets/bob_indoor_venue_photos_share/``\n(see ``PHOTO_FIXTURES``). Entries with ``indoor=True`` are sent to Bob in the\noracle. This scenario exercises multimodal photo filtering in Album,\nvision-based indoor/outdoor discrimination against same-day decoys, and gated\nphoto sharing via Messages. Constraints:\n- Ask one proactive accept/reject question before messaging Bob.\n- Bob only asks the user to send photos; he must not request folder creation, photo moves, or any local reorganization.\n- User responses are limited to accept/reject style.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulAlbumApp",
+      "StatefulMessagingApp",
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface"
+    ],
+    "timestamp": "2026-07-13T05:37:00.683171",
+    "source_path": "pare/scenarios/multimodal_benchmark/BobIndoorVenuePhotosShare.py"
   }
 ]
