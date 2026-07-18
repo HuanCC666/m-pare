@@ -40,9 +40,16 @@ def test_generator_prompts_are_multimodal_by_default() -> None:
     assert "VisualAssetSpec" in prompts.SCENARIO_DESCRIPTION_SYSTEM_PROMPT
     assert "Socially plausible action ownership" in prompts.SCENARIO_DESCRIPTION_SYSTEM_PROMPT
     assert "must not ask them to reorganize" in prompts.SCENARIO_DESCRIPTION_USER_PROMPT
+    assert "description-placeholder" in prompts.ASSET_PLANNING_SYSTEM_PROMPT
+    assert "at most 5 assets" in prompts.ASSET_PLANNING_SYSTEM_PROMPT
     assert "rice_cooker_photo_cart_suggestion.py" in prompts.SCENARIO_DESCRIPTION_USER_PROMPT
     assert "calendar_conflict_urgent_reschedule.py" not in prompts.SCENARIO_DESCRIPTION_SYSTEM_PROMPT
-    assert "image inspection" in prompts.VALIDATION_SYSTEM_PROMPT.lower()
+    assert "prefer photo-first" in prompts.SCENARIO_DESCRIPTION_SYSTEM_PROMPT.lower()
+    assert "prefer photo-first assets" in prompts.ASSET_PLANNING_SYSTEM_PROMPT.lower()
+    assert "exactly two checks" in prompts.VALIDATION_SYSTEM_PROMPT.lower()
+    assert "proposal validation" in prompts.VALIDATION_SYSTEM_PROMPT.lower()
+    assert "task validation" in prompts.VALIDATION_SYSTEM_PROMPT.lower()
+    assert "do not add extra checks" in prompts.VALIDATION_SYSTEM_PROMPT.lower()
     assert hasattr(prompts, "ASSET_PLANNING_SYSTEM_PROMPT")
     assert "assets.json" in prompts.ASSET_PLANNING_SYSTEM_PROMPT
 
@@ -53,5 +60,5 @@ def test_original_seed_template_contains_multimodal_placeholders() -> None:
 
     assert "SandboxLocalFileSystem" in seed
     assert "Visual assets" in seed
-    assert "log_has_agent_image_view" in seed
-    assert "image inspection" in seed
+    assert "Check 1 — Proposal" in seed
+    assert "Check 2 — Task" in seed

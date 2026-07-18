@@ -148,3 +148,71 @@ def test_orchestrator_uses_multimodal_metadata_by_default(tmp_path: Path) -> Non
     )
 
     assert orchestrator.scenario_metadata_path.name == "multimodal_scenario_metadata.json"
+
+
+def test_parse_step1_output_strips_markdown_backticks_from_identifiers(tmp_path: Path) -> None:
+    """Step 1 markdown-wrapped ids/class names must become valid Python identifiers."""
+    from pare.scenarios.generator.agent.scenario_generating_agent_orchestrator import (
+        ScenarioGeneratingAgentOrchestrator,
+    )
+
+    orchestrator = ScenarioGeneratingAgentOrchestrator(
+        trajectory_dir=tmp_path / "trajectory",
+        debug_prompts=True,
+        max_iterations=1,
+    )
+    text = (
+        "Scenario ID: `bakery_cake_photo_mismatch_cancel`\n"
+        "Class Name: `BakeryCakePhotoMismatchCancel`\n"
+        "Description:\n"
+        "A bakery emails a cake photo.\n"
+    )
+    scenario_id, class_name, description = orchestrator._parse_step1_output(text)
+    assert scenario_id == "bakery_cake_photo_mismatch_cancel"
+    assert class_name == "BakeryCakePhotoMismatchCancel"
+    assert "bakery emails" in description.lower()
+
+
+def test_export_final_scenario_uses_snake_case_scenario_id(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    """Exported files should be named by scenario_id, not PascalCase class name."""
+    from pare.scenarios.generator.agent.scenario_generating_agent_orchestrator import (
+        RunCheckResult,
+        ScenarioGeneratingAgentOrchestrator,
+    )
+
+    export_dir = tmp_path / "generated_scenarios"
+    traj = tmp_path / "trajectory"
+    orchestrator = ScenarioGeneratingAgentOrchestrator(
+        trajectory_dir=traj,
+        generated_scenarios_dir=export_dir,
+        debug_prompts=True,
+        max_iterations=1,
+    )
+    scenario_file = orchestrator.scenario_file
+    scenario_file.write_text(
+        (
+            "from pare.scenarios import PAREScenario\n"
+            "from pare.scenarios.utils.registry import register_scenario\n"
+            '@register_scenario("broken_planter_replacement_order")\n'
+            "class BrokenPlanterReplacementOrder(PAREScenario):\n"
+            '    """doc"""\n'
+            "    pass\n"
+        ),
+        encoding="utf-8",
+    )
+    orchestrator._last_check_result = RunCheckResult(
+        passed=True,
+        feedback="ok",
+        runtime_error=False,
+        validation_reached=True,
+        validation_success=True,
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "_initialize_working_scenario_from_seed",
+        lambda: None,
+    )
+    orchestrator._export_final_scenario_and_reset()
+
+    assert (export_dir / "broken_planter_replacement_order.py").exists()
+    assert not (export_dir / "BrokenPlanterReplacementOrder.py").exists()

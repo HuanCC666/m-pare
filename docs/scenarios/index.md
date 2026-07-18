@@ -62,7 +62,7 @@ Core modules:
 Outputs:
 
 - Working file: `pare/scenarios/default_generation_output/editable_seed_scenario.py`
-- Final generated scenarios: `pare/scenarios/default_generation_output/`
+- Final generated scenarios: `pare/scenarios/multimodal_benchmark/generated_scenarios/<scenario_id>.py` (snake_case)
 - Step trajectory snapshots: `pare/scenarios/generator/step_trajectory/`
 
 See:

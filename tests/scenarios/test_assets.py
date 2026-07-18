@@ -201,3 +201,71 @@ def test_asset_provider_args_validate_fireworks_key(monkeypatch: MonkeyPatch) ->
         assert "FIREWORKS_API_KEY" in str(exc)
     else:
         raise AssertionError("Expected missing Fireworks API key to fail validation")
+
+
+def test_description_placeholder_provider_writes_txt_and_manifests(tmp_path: Path) -> None:
+    """Placeholder mode should emit ChatGPT-ready .txt files and resume manifests."""
+    from pare.scenarios.generator.assets import DescriptionPlaceholderAssetProvider, VisualAssetSpec
+
+    specs = [
+        VisualAssetSpec.from_dict(
+            {
+                "asset_id": f"photo_{idx}",
+                "filename": f"IMG_{idx}.jpg",
+                "sandbox_path": f"/photos/IMG_{idx}.jpg",
+                "delivery": "album_photo",
+                "kind": "photo_like",
+                "generation_prompt": f"Indoor dining photo number {idx}.",
+                "visual_requirements": ["indoor dining tables"],
+                "ground_truth": {"indoor": True, "index": idx},
+            },
+            require_source_path=False,
+        )
+        for idx in range(6)
+    ]
+    provider = DescriptionPlaceholderAssetProvider(
+        description_dir=tmp_path / "description",
+        image_dir=tmp_path / "image_assets",
+        max_assets=5,
+        scenario_id="bob_indoor_test",
+    )
+    record = provider.write_placeholders(specs)
+
+    assert record["provider"] == "description-placeholder"
+    assert len(record["assets"]) == 5
+    assert (tmp_path / "description" / "bob_indoor_test" / "IMG_0.txt").exists()
+    assert "Indoor dining photo number 0." in (
+        tmp_path / "description" / "bob_indoor_test" / "IMG_0.txt"
+    ).read_text(encoding="utf-8")
+    assert not (tmp_path / "description" / "bob_indoor_test" / "IMG_5.txt").exists()
+
+    image_scenario_dir = tmp_path / "image_assets" / "bob_indoor_test"
+    assert image_scenario_dir.is_dir()
+    drop_guide = image_scenario_dir / "DROP_IMAGES_HERE.txt"
+    assert drop_guide.exists()
+    assert "IMG_0.jpg" in drop_guide.read_text(encoding="utf-8")
+    assert not (image_scenario_dir / "local_assets.manifest.json").exists()
+
+    pending_path = tmp_path / "description" / "bob_indoor_test" / "pending_images.manifest.json"
+    local_path = tmp_path / "description" / "bob_indoor_test" / "local_assets.manifest.json"
+    assert pending_path.exists()
+    assert local_path.exists()
+    local_manifest = json.loads(local_path.read_text(encoding="utf-8"))
+    assert len(local_manifest["assets"]) == 5
+    assert local_manifest["assets"][0]["source_path"].endswith("IMG_0.jpg")
+    assert "/image_assets/bob_indoor_test/" in local_manifest["assets"][0]["source_path"].replace("\\", "/")
+
+
+def test_description_placeholder_provider_args_do_not_require_api_key() -> None:
+    """description-placeholder should validate without image API credentials."""
+    from argparse import Namespace
+
+    from pare.scenarios.generator.scenario_generator import validate_asset_provider_args
+
+    validate_asset_provider_args(
+        Namespace(
+            asset_provider="description-placeholder",
+            asset_manifest_path=None,
+            image_model=None,
+        )
+    )

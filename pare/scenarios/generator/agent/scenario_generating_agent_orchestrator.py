@@ -18,8 +18,13 @@ from pare.benchmark.scenario_loader import load_scenarios_from_registry
 from pare.multi_scenario_runner import MultiScenarioRunner
 from pare.scenarios.config import MultiScenarioRunnerConfig
 from pare.scenarios.generator.assets import (
+    DEFAULT_DESCRIPTION_DIR,
     DEFAULT_FIREWORKS_IMAGE_MODEL,
+    DEFAULT_GENERATED_SCENARIOS_DIR,
+    DEFAULT_IMAGE_ASSETS_DIR,
+    DEFAULT_IMAGE_GENERATION_MAX_ASSETS,
     DEFAULT_OPENAI_IMAGE_MODEL,
+    DescriptionPlaceholderAssetProvider,
     FireworksImageAssetProvider,
     ImageGenerationClient,
     LocalAssetProvider,
@@ -77,6 +82,10 @@ class ScenarioGeneratingAgentOrchestrator:
         asset_provider: str = "local",
         image_model: str | None = None,
         image_generation_max_retries: int = 1,
+        image_generation_max_assets: int = DEFAULT_IMAGE_GENERATION_MAX_ASSETS,
+        description_dir: str | Path | None = None,
+        image_assets_dir: str | Path | None = None,
+        generated_scenarios_dir: str | Path | None = None,
         image_client: ImageGenerationClient | None = None,
         claude_filesystem_config: ClaudeFilesystemConfig | None = None,
     ) -> None:
@@ -138,19 +147,18 @@ class ScenarioGeneratingAgentOrchestrator:
         self._prompt_context: dict[str, str] = prompt_context or {}
 
         self._last_check_result: RunCheckResult | None = None
-        self.asset_manifest_path = Path(asset_manifest_path) if asset_manifest_path is not None else None
-        self.asset_dir = Path(asset_dir) if asset_dir is not None else self.output_dir / "assets"
-        self.asset_provider = asset_provider
-        if image_model is None:
-            self.image_model = (
-                DEFAULT_FIREWORKS_IMAGE_MODEL
-                if asset_provider == "fireworks-image"
-                else DEFAULT_OPENAI_IMAGE_MODEL
-            )
-        else:
-            self.image_model = image_model
-        self.image_generation_max_retries = max(1, image_generation_max_retries)
-        self.image_client = image_client
+        self._configure_asset_and_export_paths(
+            asset_manifest_path=asset_manifest_path,
+            asset_dir=asset_dir,
+            asset_provider=asset_provider,
+            image_model=image_model,
+            image_generation_max_retries=image_generation_max_retries,
+            image_generation_max_assets=image_generation_max_assets,
+            description_dir=description_dir,
+            image_assets_dir=image_assets_dir,
+            generated_scenarios_dir=generated_scenarios_dir,
+            image_client=image_client,
+        )
         # Declarative filesystem policy for Claude Agent SDK usage. Enforcement
         # will be wired via hooks and tool options in a follow-up change.
         if claude_filesystem_config is None:
@@ -325,12 +333,16 @@ class ScenarioGeneratingAgentOrchestrator:
             if isinstance(entry, dict) and entry.get("class_name")
         }
 
-        # Also prevent filename collisions in the canonical generated scenarios dir.
+        # Also prevent filename collisions in the exported generated-scenarios dir
+        # (files are named by snake_case scenario_id).
         try:
-            for path in self.seed_scenarios_dir.glob("*.py"):
-                existing_class_names.add(path.stem)
+            for path in self.generated_scenarios_dir.glob("*.py"):
+                existing_ids.add(path.stem)
         except Exception:
-            logger.exception("Failed to scan existing scenario filenames under %s", self.seed_scenarios_dir)
+            logger.exception(
+                "Failed to scan existing scenario filenames under %s",
+                self.generated_scenarios_dir,
+            )
 
         original = {"scenario_id": scenario_id, "class_name": class_name}
         new_scenario_id = self._dedupe_scenario_id(scenario_id, existing_ids)
@@ -385,6 +397,9 @@ class ScenarioGeneratingAgentOrchestrator:
 
             if resume_mode in {"step2", "step3", "step4"} and not self.debug_prompts:
                 step1 = self._load_existing_step1_result(step1_path)
+                scenario_id, _, _ = self._parse_step1_output(step1.content)
+                if scenario_id:
+                    self._current_scenario_id = scenario_id
             else:
 
                 def step1_check(description: str, iteration: int) -> tuple[bool, str]:
@@ -415,6 +430,7 @@ class ScenarioGeneratingAgentOrchestrator:
                         scenario_id, class_name, dedupe_notes = self._ensure_unique_step1_identifiers(
                             scenario_id=scenario_id, class_name=class_name
                         )
+                        self._current_scenario_id = scenario_id
                         self._append_scenario_metadata(
                             scenario_id=scenario_id,
                             class_name=class_name,
@@ -439,7 +455,7 @@ class ScenarioGeneratingAgentOrchestrator:
             # Step 1.5: Visual Asset Planning
             asset_plan_path = self.output_dir / "assets.json"
             if resume_mode in {"step2", "step3", "step4"} and asset_plan_path.exists():
-                asset_plan_content = self._safe_read_text(asset_plan_path)
+                asset_plan_content = self._strip_markdown_json_fence(self._safe_read_text(asset_plan_path))
                 asset_plan = StepResult(
                     name="Step 1.5: Visual Asset Plan (resumed)",
                     content=asset_plan_content,
@@ -449,7 +465,7 @@ class ScenarioGeneratingAgentOrchestrator:
                 )
             else:
                 asset_plan = self.asset_planning_agent.run(scenario_description=step1.content)
-                asset_plan_content = asset_plan.content
+                asset_plan_content = self._strip_markdown_json_fence(asset_plan.content)
                 if not self.debug_prompts:
                     self._write_output(
                         content=asset_plan_content,
@@ -460,6 +476,24 @@ class ScenarioGeneratingAgentOrchestrator:
                     )
                     self._append_step_trajectory("step1_5_assets", asset_plan)
             resolved_assets_context = self._resolve_visual_assets_if_available(asset_plan_content)
+            if isinstance(resolved_assets_context, dict) and resolved_assets_context.get("stop_after_assets"):
+                cost_summary = self._write_usage_cost_summary()
+                pending = resolved_assets_context.get("pending_images") or {}
+                logger.info(
+                    "Stopped after Step 1.5 description placeholders. "
+                    "Paste images into %s (see DROP_IMAGES_HERE.txt), then resume with local manifest %s",
+                    pending.get("image_dir"),
+                    pending.get("local_manifest_path"),
+                )
+                return {
+                    "status": "awaiting_images",
+                    "description_path": str(self.scenario_metadata_path),
+                    "scenario_file_path": str(self.scenario_file),
+                    "trajectory_dir": str(self.trajectory_dir),
+                    "cost_summary": cost_summary,
+                    "pending_images": pending,
+                    "steps": [step1, asset_plan],
+                }
             if resolved_assets_context:
                 asset_plan_content = f"{asset_plan_content}\n\n{resolved_assets_context}"
 
@@ -659,18 +693,73 @@ class ScenarioGeneratingAgentOrchestrator:
             return None, self._historical_descriptions
         return filtered_path, filtered
 
-    def _resolve_visual_assets_if_available(self, asset_plan_content: str) -> str:
-        """Resolve local or generated multimodal assets when configured."""
+    def _configure_asset_and_export_paths(
+        self,
+        *,
+        asset_manifest_path: str | Path | None,
+        asset_dir: str | Path | None,
+        asset_provider: str,
+        image_model: str | None,
+        image_generation_max_retries: int,
+        image_generation_max_assets: int,
+        description_dir: str | Path | None,
+        image_assets_dir: str | Path | None,
+        generated_scenarios_dir: str | Path | None,
+        image_client: ImageGenerationClient | None,
+    ) -> None:
+        """Configure asset provider paths and image-generation settings."""
+        self.asset_manifest_path = Path(asset_manifest_path) if asset_manifest_path is not None else None
+        self.asset_provider = asset_provider
+        self.description_dir = Path(description_dir) if description_dir is not None else DEFAULT_DESCRIPTION_DIR
+        self.image_assets_dir = (
+            Path(image_assets_dir) if image_assets_dir is not None else DEFAULT_IMAGE_ASSETS_DIR
+        )
+        self.generated_scenarios_dir = (
+            Path(generated_scenarios_dir)
+            if generated_scenarios_dir is not None
+            else DEFAULT_GENERATED_SCENARIOS_DIR
+        )
+        if asset_dir is not None:
+            self.asset_dir = Path(asset_dir)
+        elif asset_provider == "description-placeholder":
+            self.asset_dir = self.image_assets_dir
+        else:
+            self.asset_dir = self.output_dir / "assets"
+        if image_model is None:
+            self.image_model = (
+                DEFAULT_FIREWORKS_IMAGE_MODEL
+                if asset_provider == "fireworks-image"
+                else DEFAULT_OPENAI_IMAGE_MODEL
+            )
+        else:
+            self.image_model = image_model
+        self.image_generation_max_retries = max(1, image_generation_max_retries)
+        self.image_generation_max_assets = max(1, image_generation_max_assets)
+        self.image_client = image_client
+        self._current_scenario_id: str | None = None
+
+    def _resolve_visual_assets_if_available(
+        self, asset_plan_content: str
+    ) -> str | dict[str, Any]:
+        """Resolve local or generated multimodal assets when configured.
+
+        For ``description-placeholder``, write ChatGPT-ready .txt descriptions and a
+        JSON manifest, then return a stop signal so the pipeline can wait for real
+        images before Steps 2-4.
+        """
         if self.asset_provider == "local":
             if self.asset_manifest_path is None:
                 return ""
             provider = LocalAssetProvider(manifest_path=self.asset_manifest_path, output_dir=self.asset_dir)
             resolved_assets = provider.resolve_assets()
             manifest_path = str(self.asset_manifest_path)
+        elif self.asset_provider == "description-placeholder":
+            return self._write_description_placeholders(asset_plan_content)
         elif self.asset_provider in {"openai-image", "fireworks-image"}:
             specs = self._parse_visual_asset_specs(asset_plan_content, require_source_path=False)
             if not specs:
                 return ""
+            specs = specs[: self.image_generation_max_assets]
             if self.asset_provider == "openai-image":
                 provider = OpenAIImageAssetProvider(
                     output_dir=self.asset_dir,
@@ -704,10 +793,46 @@ class ScenarioGeneratingAgentOrchestrator:
             raise RuntimeError("Visual asset QA failed: " + "; ".join(qa_result.errors))
         return "Resolved visual assets:\n" + json.dumps(record, indent=2, default=str)
 
+    def _write_description_placeholders(self, asset_plan_content: str) -> str | dict[str, Any]:
+        """Write description placeholders and signal the pipeline to stop for manual images."""
+        specs = self._parse_visual_asset_specs(asset_plan_content, require_source_path=False)
+        if not specs:
+            return ""
+        provider = DescriptionPlaceholderAssetProvider(
+            description_dir=self.description_dir,
+            image_dir=self.image_assets_dir,
+            max_assets=self.image_generation_max_assets,
+            scenario_id=self._current_scenario_id,
+        )
+        pending = provider.write_placeholders(specs)
+        pending_out = self.trajectory_dir / "pending_images.manifest.json"
+        pending_out.write_text(json.dumps(pending, indent=2, default=str), encoding="utf-8")
+        if pending.get("local_manifest_path"):
+            local_src = Path(str(pending["local_manifest_path"]))
+            if local_src.exists():
+                (self.trajectory_dir / "local_assets.manifest.json").write_text(
+                    local_src.read_text(encoding="utf-8"),
+                    encoding="utf-8",
+                )
+        return {"stop_after_assets": True, "pending_images": pending}
+
+    @staticmethod
+    def _strip_markdown_json_fence(text: str) -> str:
+        """Remove optional ``` / ```json fences around JSON payloads."""
+        raw = (text or "").strip()
+        if not raw.startswith("```"):
+            return raw
+        lines = raw.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        return "\n".join(lines).strip()
+
     @staticmethod
     def _parse_visual_asset_specs(asset_plan_content: str, *, require_source_path: bool) -> list[VisualAssetSpec]:
         """Parse Step 1.5 JSON into visual asset specs."""
-        raw = asset_plan_content.strip()
+        raw = ScenarioGeneratingAgentOrchestrator._strip_markdown_json_fence(asset_plan_content)
         if not raw:
             return []
         start = raw.find("{")
@@ -982,7 +1107,43 @@ class ScenarioGeneratingAgentOrchestrator:
             return None, None, raw
 
         description = "\n".join(description_lines).strip()
+        scenario_id = self._sanitize_scenario_id(scenario_id) if scenario_id else None
+        class_name = self._sanitize_class_name(class_name) if class_name else None
         return scenario_id, class_name, description
+
+    @staticmethod
+    def _sanitize_identifier_token(value: str) -> str:
+        """Strip common markdown wrappers from Step 1 identifier fields."""
+        cleaned = value.strip()
+        # Unwrap repeated surrounding backticks / quotes / bold markers.
+        for _ in range(3):
+            next_val = cleaned
+            next_val = re.sub(r"^`+([^`]+)`+$", r"\1", next_val)
+            next_val = re.sub(r"^['\"]+([^'\"]+)['\"]+$", r"\1", next_val)
+            next_val = re.sub(r"^\*\*([^*]+)\*\*$", r"\1", next_val)
+            next_val = next_val.strip()
+            if next_val == cleaned:
+                break
+            cleaned = next_val
+        return cleaned
+
+    @classmethod
+    def _sanitize_scenario_id(cls, scenario_id: str) -> str | None:
+        """Normalize a scenario id to lowercase snake_case tokens."""
+        cleaned = cls._sanitize_identifier_token(scenario_id)
+        cleaned = cleaned.strip().lower().replace("-", "_").replace(" ", "_")
+        cleaned = re.sub(r"[^a-z0-9_]+", "", cleaned)
+        cleaned = re.sub(r"_+", "_", cleaned).strip("_")
+        return cleaned or None
+
+    @classmethod
+    def _sanitize_class_name(cls, class_name: str) -> str | None:
+        """Normalize a class name to a valid PascalCase Python identifier."""
+        cleaned = cls._sanitize_identifier_token(class_name)
+        cleaned = re.sub(r"[^A-Za-z0-9_]+", "", cleaned)
+        if not cleaned or not cleaned[0].isalpha():
+            return None
+        return cleaned
 
     def _update_scenario_header(  # noqa: C901
         self,
@@ -1156,13 +1317,13 @@ class ScenarioGeneratingAgentOrchestrator:
         return summary
 
     def _export_final_scenario_and_reset(self) -> None:
-        """Export the final scenario by class name, then reset the working file.
+        """Export the final scenario by scenario_id, then reset the working file.
 
         After all four steps and checks have passed, this method:
-        1. Reads `editable_seed_scenario.py` and extracts the PAREScenario class
-           name (e.g., `MyScenarioName`).
+        1. Reads `editable_seed_scenario.py` and extracts `@register_scenario("<id>")`
+           (snake_case) plus the PAREScenario class name for logging.
         2. Copies the final scenario into
-           `pare/scenarios/generator/MyScenarioName.py`.
+           `pare/scenarios/multimodal_benchmark/generated_scenarios/<scenario_id>.py`.
         3. Resets `editable_seed_scenario.py` back to the original seed template
            so the next multi-step run starts from a clean, canonical file.
         """
@@ -1171,22 +1332,26 @@ class ScenarioGeneratingAgentOrchestrator:
             logger.warning("Final scenario export skipped: working scenario file is empty.")
             return
 
-        match = re.search(r"class\s+(\w+)\s*\(PAREScenario\):", code)
-        if not match:
+        scenario_id = self._extract_scenario_id(code)
+        if not scenario_id:
             logger.warning(
-                "Final scenario export skipped: could not parse PAREScenario class name from %s",
+                "Final scenario export skipped: could not parse @register_scenario id from %s",
                 self.scenario_file,
             )
             return
 
-        class_name = match.group(1)
-        target_path = self.seed_scenarios_dir / f"{class_name}.py"
+        class_match = re.search(r"class\s+(\w+)\s*\(PAREScenario\):", code)
+        class_name = class_match.group(1) if class_match else scenario_id
+
+        export_dir = self.generated_scenarios_dir
+        export_dir.mkdir(parents=True, exist_ok=True)
+        target_path = export_dir / f"{scenario_id}.py"
         if target_path.exists():
             # Safety guard: avoid silently overwriting an existing scenario file.
-            # Prefer adding a numeric suffix to the filename (class name inside the file remains unchanged).
+            # Prefer adding a numeric suffix to the filename (identifiers inside the file remain unchanged).
             i = 2
             while True:
-                candidate = self.seed_scenarios_dir / f"{class_name}{i}.py"
+                candidate = export_dir / f"{scenario_id}_{i}.py"
                 if not candidate.exists():
                     logger.warning(
                         "Target scenario file %s already exists; exporting to %s instead to avoid overwrite.",
@@ -1206,7 +1371,9 @@ class ScenarioGeneratingAgentOrchestrator:
             or not self._last_check_result.validation_success
         ):
             logger.warning(
-                "Skipping final scenario export for class %s: last run check did not validate successfully.",
+                "Skipping final scenario export for scenario_id %s (class %s): "
+                "last run check did not validate successfully.",
+                scenario_id,
                 class_name,
             )
             # Still reset the working file so subsequent runs start clean.
@@ -1216,12 +1383,18 @@ class ScenarioGeneratingAgentOrchestrator:
         try:
             shutil.copy2(self.scenario_file, target_path)
             logger.info(
-                "Exported final scenario for class %s to %s",
+                "Exported final scenario for scenario_id %s (class %s) to %s",
+                scenario_id,
                 class_name,
                 target_path,
             )
+            self._update_metadata_source_path(scenario_id=scenario_id, source_path=target_path)
         except Exception:  # pragma: no cover - export failures are non-fatal
-            logger.exception("Failed to export final scenario for class %s", class_name)
+            logger.exception(
+                "Failed to export final scenario for scenario_id %s (class %s)",
+                scenario_id,
+                class_name,
+            )
 
         # Reset the editable working file back to the original seed template so
         # subsequent runs begin from a pristine scenario skeleton.
@@ -1237,38 +1410,83 @@ class ScenarioGeneratingAgentOrchestrator:
         This is used when resuming the pipeline from Step 2 after fixing issues
         downstream, so we can reuse the narrative without re-running the LLM.
         """
-        # Prefer the legacy markdown path if present and non-empty (backward compatible),
-        # otherwise fall back to the most recent entry in `valid_descriptions.json`.
-        raw = self._safe_read_text(step1_path)
-        description: str | None = None
-        if raw.strip():
-            lines = raw.splitlines()
-            # Drop header/comment lines (e.g., "# Step 1 - Scenario Description")
-            content_lines = [line for line in lines if not line.lstrip().startswith("#")]
-            candidate = "\n".join(content_lines).strip()
-            if candidate:
-                description = candidate
-        if description is None:
-            history = self._read_scenario_metadata()
-            if history:
-                last = history[-1]
-                candidate = (last.get("description") or "").strip()
-                if candidate:
-                    description = candidate
+        description, source_path = self._resolve_resumed_step1_content(step1_path)
         if not description:
             raise RuntimeError(
-                "Cannot resume from Step 2: missing markdown and no valid description found in valid_descriptions.json"
+                "Cannot resume from Step 2: missing step1 markdown, Step 1 scenario snapshot, "
+                "and no matching scenario description in multimodal_scenario_metadata.json"
             )
-
         return StepResult(
             name="Step 1: Scenario Description (resumed)",
             content=description,
             iterations=0,
             notes={
                 "resumed_from_disk": True,
-                "source_path": str(step1_path),
+                "source_path": source_path,
             },
             conversation=[],
+        )
+
+    def _resolve_resumed_step1_content(self, step1_path: Path) -> tuple[str | None, str]:
+        """Resolve Step 1 resume text and its source path."""
+        raw = self._safe_read_text(step1_path)
+        if raw.strip():
+            lines = raw.splitlines()
+            content_lines = [line for line in lines if not line.lstrip().startswith("#")]
+            candidate = "\n".join(content_lines).strip()
+            if candidate:
+                return candidate, str(step1_path)
+
+        snapshot_path = self.trajectory_dir / "editable_seed_scenario_step1.py"
+        snapshot = self._safe_read_text(snapshot_path)
+        rebuilt = self._rebuild_step1_content_from_scenario_source(snapshot)
+        if rebuilt:
+            return rebuilt, str(snapshot_path)
+
+        scenario_id = self._extract_scenario_id(snapshot)
+        if not scenario_id:
+            return None, str(step1_path)
+        for entry in self._read_scenario_metadata():
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("scenario_id") or "").strip() != scenario_id:
+                continue
+            class_name = str(entry.get("class_name") or "").strip() or "ScenarioName"
+            desc = str(entry.get("description") or "").strip()
+            if not desc:
+                continue
+            return (
+                f"Scenario ID: {scenario_id}\n"
+                f"Class Name: {class_name}\n"
+                f"Description:\n{desc}\n",
+                f"{self.scenario_metadata_path}#{scenario_id}",
+            )
+        return None, str(step1_path)
+
+    @staticmethod
+    def _rebuild_step1_content_from_scenario_source(source: str) -> str | None:
+        """Rebuild Step 1 labeled output from a scenario Python snapshot."""
+        if not source.strip():
+            return None
+        scenario_id_match = re.search(
+            r'@register_scenario\(\s*["\']([^"\']+)["\']\s*\)',
+            source,
+        )
+        class_match = re.search(r"class\s+(\w+)\s*\(PAREScenario\):", source)
+        if not scenario_id_match or not class_match:
+            return None
+        class_idx = source.index(class_match.group(0))
+        doc_start = source.find('"""', class_idx)
+        doc_end = source.find('"""', doc_start + 3) if doc_start != -1 else -1
+        if doc_start == -1 or doc_end == -1:
+            return None
+        docstring = source[doc_start + 3 : doc_end].strip()
+        if not docstring:
+            return None
+        return (
+            f"Scenario ID: {scenario_id_match.group(1)}\n"
+            f"Class Name: {class_match.group(1)}\n"
+            f"Description:\n{docstring}\n"
         )
 
     def _run_step_check(  # noqa: C901
@@ -1537,6 +1755,32 @@ class ScenarioGeneratingAgentOrchestrator:
         self.scenario_metadata_path.parent.mkdir(parents=True, exist_ok=True)
         self.scenario_metadata_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
         self._historical_descriptions = existing
+
+    def _update_metadata_source_path(self, *, scenario_id: str, source_path: Path) -> None:
+        """Attach/update source_path for an exported scenario in multimodal metadata."""
+        try:
+            existing = self._read_scenario_metadata()
+            try:
+                rel = str(source_path.resolve().relative_to(self.repo_root.parent.resolve()))
+            except ValueError:
+                rel = str(source_path)
+            updated = False
+            for entry in reversed(existing):
+                if not isinstance(entry, dict):
+                    continue
+                if str(entry.get("scenario_id") or "").strip() != scenario_id:
+                    continue
+                entry["source_path"] = rel
+                updated = True
+                break
+            if updated:
+                self.scenario_metadata_path.write_text(
+                    json.dumps(existing, indent=2),
+                    encoding="utf-8",
+                )
+                self._historical_descriptions = existing
+        except Exception:
+            logger.exception("Failed to update source_path in metadata for %s", scenario_id)
 
     def _persist_failed_scenario(
         self, reason: str, runtime_error: bool = True, validation_reached: bool = False

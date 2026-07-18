@@ -230,5 +230,425 @@
     ],
     "timestamp": "2026-07-13T05:37:00.683171",
     "source_path": "pare/scenarios/multimodal_benchmark/BobIndoorVenuePhotosShare.py"
+  },
+  {
+    "scenario_id": "plumber_reschedule_card_update",
+    "class_name": "PlumberRescheduleCardUpdate",
+    "description": "Agent updates an existing repair-appointment reminder after a reschedule email that includes an appointment-card photo.\n\nA plumbing company emails the user: their previously scheduled kitchen faucet repair needs to move to a new slot. The message carries an attached photo of the updated appointment card (a local image asset seeded in Files and attached to the email) and explicitly asks the user to update their existing reminder to the new date and time shown on the card, then reply to confirm. A prior reminder titled \"Kitchen faucet repair appointment\" is already present in the Reminders app from the original booking, so the change is an update rather than a new reminder.\n\nThe assistant must: (1) read the incoming email with the image attachment, (2) display/inspect the appointment-card photo to read the new date and time window from the card, (3) list existing reminders to locate the current \"Kitchen faucet repair appointment\" reminder, (4) proactively propose updating that reminder to the new slot and replying to the plumber, and (5) after user acceptance, update the reminder's due datetime to the slot read from the card and reply to the email confirming the new appointment.\n\nThis scenario exercises multimodal grounding on a photo-like appointment card, cross-app coordination across Email + Files + Reminders, updating an existing reminder (rather than creating a new one) after listing reminders, and a reply-style outward action to a remote party \u2014 all cued explicitly by the trigger email.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulEmailApp",
+      "StatefulReminderApp",
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface"
+    ],
+    "timestamp": "2026-07-17T23:19:25.189208",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/plumber_reschedule_card_update.py"
+  },
+  {
+    "scenario_id": "pet_vaccine_card_annual_reminder",
+    "class_name": "PetVaccineCardAnnualReminder",
+    "description": "Agent reads a pet vaccination record card from an email attachment and sets up a recurring annual booster reminder.\n\nA veterinary clinic emails the user a photo of their dog's vaccination record card (a local image asset seeded in Files and attached to the email). The card image shows the next booster vaccine name and due date as printed/handwritten text that can only be read by viewing the image; the email explicitly asks the owner to set a recurring annual reminder so future boosters are not missed, and points out that the upcoming due date is printed on the card.\n\nThe assistant must: (1) read the incoming email with the image attachment, (2) display/inspect the vaccination record card via Files to read the booster vaccine name and due date from the image, (3) proactively propose creating an annually repeating reminder for the booster using the date read from the card, and (4) after user acceptance, create the reminder with `due_datetime` set to the booster date and yearly repetition (`repetition_unit=\"year\"`, `repetition_value=1`).\n\nThis scenario exercises multimodal grounding on a photo-like vaccination record card, cross-app coordination across Email + Files + Reminders, and creation of a recurring (annually repeating) reminder \u2014 all cued explicitly by the trigger email's request for ongoing follow-up tracking.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulEmailApp",
+      "StatefulReminderApp",
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface"
+    ],
+    "timestamp": "2026-07-17T23:37:02.761249",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/pet_vaccine_card_annual_reminder.py"
+  },
+  {
+    "scenario_id": "dental_cancellation_rebook_reminder",
+    "class_name": "DentalCancellationRebookReminder",
+    "description": "A dental clinic emails the user a photo of a printed appointment-cancellation card and asks them to remove the now-canceled appointment from their reminders and set a new reminder to call the clinic to rebook, using the next availability date printed on the card.\n\nThe cancellation email from \"Brightsmile Dental\" arrives with an attached photo of a printed cancellation card (a local image asset seeded in Files and attached to the email). The card shows two printed dates that can only be read by viewing the image: the original appointment slot (\"July 24, 2025 at 14:00\") and the clinic's next availability (\"August 18, 2025\"). The email body explicitly asks the owner to delete the canceled appointment from their reminders and create a new reminder to call the clinic to rebook on the next availability date shown on the card. A pre-existing reminder titled \"Dental cleaning \u2014 July 24\" is already present in the Reminders app from the original booking, so the workflow is a delete-then-create rather than an update or a fresh create.\n\nThe assistant must: (1) read the incoming email with the image attachment, (2) display/inspect the cancellation-card photo via Files to read both the original appointment date and the next availability date from the image, (3) list existing reminders to locate the \"Dental cleaning \u2014 July 24\" reminder, (4) proactively propose deleting that reminder and creating a new \"Call Brightsmile Dental to rebook\" reminder due on August 18, 2025, and (5) after user acceptance, delete the old reminder and create the new rebook reminder using the date read from the card.\n\nThis scenario exercises multimodal grounding on a photo-like cancellation card where the image is the sole source for both the delete-target identifier (the original appointment date, used to match against an existing reminder) and the new reminder's due date, cross-app coordination across Email + Files + Reminders, and the novel combination of `delete_reminder` (removing a now-invalid commitment) with `add_reminder` (tracking the rebook call) \u2014 all cued explicitly by the trigger email's request to both remove the old appointment and track the rebook.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulEmailApp",
+      "StatefulReminderApp",
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface"
+    ],
+    "timestamp": "2026-07-17T23:37:58.437261",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/dental_cancellation_rebook_reminder.py"
+  },
+  {
+    "scenario_id": "field_trip_slip_forward_reminder",
+    "class_name": "FieldTripSlipForwardReminder",
+    "description": "A co-parent emails the user a photo of a printed school field-trip permission slip and asks them to forward the form to the child's grandparent and set a reminder to return the signed form by the deadline printed on the slip.\n\nThe co-parent's email arrives with an attached photo of the printed permission slip (a local image asset seeded in Files and attached to the email). The slip image shows the field-trip date, destination, and the \"return signed form by\" deadline as printed text that can only be read by viewing the image; the email body explicitly asks the user to forward this email to the grandparent at a stated email address so they're aware of the trip, and to set a reminder to return the signed form by the deadline shown on the slip.\n\nThe assistant must: (1) read the incoming email with the image attachment, (2) display/inspect the permission-slip photo via Files to read the return deadline from the image, (3) proactively propose forwarding the email to the grandparent's address (taken from the email body) and creating a return-deadline reminder using the date read from the slip, and (4) after user acceptance, forward the email to the grandparent and create the reminder with due_datetime set to the deadline read from the slip.\n\nThis scenario exercises multimodal grounding on a photo-like printed permission slip, cross-app coordination across Email + Files + Reminders, the novel combination of `forward_email` (sharing the form with a family member whose address is explicitly stated in the trigger) with `add_reminder` (tracking the user's own return deadline), and a visually-grounded due date \u2014 all cued explicitly by the trigger email's request to both share the form and track the return.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulEmailApp",
+      "StatefulReminderApp",
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface"
+    ],
+    "timestamp": "2026-07-17T23:38:46.890911",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/field_trip_slip_forward_reminder.py"
+  },
+  {
+    "scenario_id": "music_recital_program_prep_reminder",
+    "class_name": "MusicRecitalProgramPrepReminder",
+    "description": "A private music teacher emails the parent (the device owner) a photo of a handwritten recital program announcing the student's upcoming performance slot, and asks the parent to reply confirming the student will perform and to set a reminder to pack the instrument and sheet music the evening before the recital.\n\nThe teacher's email arrives with an attached photo of the recital program (a local image asset seeded in Files and attached to the email). The program image shows the recital date, the student's named performance slot time, and the piece they will perform \u2014 all as printed/handwritten text that can only be read by viewing the image; the email body explicitly asks the parent to reply to the teacher's message confirming the student will perform, and to set a reminder for the evening before the recital to pack the instrument and sheet music for the performance slot shown on the program.\n\nThe assistant must: (1) read the incoming email with the image attachment, (2) display/inspect the recital-program photo via Files to read the recital date, performance slot time, and piece name from the image, (3) proactively propose replying to the teacher to confirm attendance and creating an evening-before prep reminder, and (4) after user acceptance, reply to the teacher's email confirming the student will perform and create the reminder with `due_datetime` set to the evening before the recital date read from the program and a description that records the performance slot time and piece name taken from the image.\n\nThis scenario exercises multimodal grounding on a handwritten/photo-like recital program (the image is the sole source for the recital date, slot time, and piece name), cross-app coordination across Email + Files + Reminders, the novel combination of `reply_to_email` (outward confirmation to the teacher) with `add_reminder` (the parent's own evening-before prep), and a visually-derived due date paired with a visually-grounded reminder description \u2014 all cued explicitly by the trigger email's request to both confirm attendance and prep ahead of the slot.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulEmailApp",
+      "StatefulReminderApp",
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface"
+    ],
+    "timestamp": "2026-07-17T23:39:26.230847",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/music_recital_program_prep_reminder.py"
+  },
+  {
+    "scenario_id": "school_lost_jacket_claim_reminder",
+    "class_name": "SchoolLostJacketClaimReminder",
+    "description": "A school's lost-and-found emails the parent (device owner) a photo of a jacket found after the after-school program and asks them to confirm whether it's their child's, reply to claim it, and set a reminder to pick it up before the front office closes for the weekend.\n\nThe email from \"Lincoln Elementary Lost & Found\" arrives with an attached photo of the jacket (a local image asset seeded in Files and attached to the email). The photo is the only source for the jacket's appearance \u2014 a distinctive color and print pattern \u2014 so the assistant must view the image to describe it for the parent to recognize; the email body deliberately does not name the color or pattern. The email body explicitly asks the parent to reply to claim the jacket, to pick it up from the front office by end of day Friday, July 31, 2026, and to set a reminder so the jacket is not placed in the weekend donation bin.\n\nThe assistant must: (1) read the incoming email with the image attachment, (2) display/inspect the jacket photo via Files to observe its color and print pattern from the image, (3) proactively propose replying to the school to claim the jacket and creating a pickup reminder due on the morning of July 31, 2026 with the front-office location recorded in the description, and (4) after user acceptance, reply to the school's email confirming the claim and create the reminder using the due date and location taken from the email body.\n\nThis scenario exercises multimodal grounding on a photo of a physical object where vision supplies appearance/identity rather than printed text, cross-app coordination across Email + Files + Reminders, the combination of `reply_to_email` (outward claim to the school) with `add_reminder` (the parent's own pickup deadline), and a due date sourced from the email body while the image supplies only visual identity \u2014 all cued explicitly by the trigger email's request to both claim and track the pickup.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulEmailApp",
+      "StatefulReminderApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-17T23:53:43.975818",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/school_lost_jacket_claim_reminder.py"
+  },
+  {
+    "scenario_id": "pipe_damage_claim_reply_reminder",
+    "class_name": "PipeDamageClaimReplyReminder",
+    "description": "A home-insurance adjuster emails the user a photo of water damage under their kitchen sink and asks them to reply confirming the damage is consistent with a pipe-failure claim, to include their policy number from their original \"Homeowners Policy Welcome\" email when replying, and to set a reminder to submit a contractor estimate before the 30-day deadline stated in the email body. The attached photo (a local image asset seeded in Files and attached to the email) is the only source for the actual damage appearance \u2014 a corroded copper pipe joint and water staining on the cabinet base \u2014 so the assistant must view the image to confirm the damage is consistent with a pipe failure rather than, e.g., an appliance flood; the email body deliberately does not describe the photo's contents. A prior \"Homeowners Policy Welcome\" email from the insurer is already in the user's inbox from when the policy was opened, and the adjuster's email names that subject so the policy number can be retrieved by searching the inbox.\n\nThe assistant must: (1) read the incoming email with the image attachment, (2) display/inspect the damage photo via Files to confirm the visible cause is a corroded pipe joint, (3) search emails for the \"Homeowners Policy Welcome\" message (the subject is named in the adjuster's email), open it, and read the policy number from its body, (4) proactively propose replying to the adjuster confirming the pipe-failure damage and including the retrieved policy number, and creating a reminder for the contractor-estimate deadline stated in the email body, and (5) after user acceptance, reply to the adjuster's email with the confirmation and policy number, and create the reminder with `due_datetime` set to the deadline from the email body.\n\nThis scenario exercises multimodal grounding on a photo of physical damage where vision supplies cause/appearance rather than printed text, cross-app coordination across Email + Files + Reminders, the use of `search_emails` to retrieve a policy number from a prior inbox message whose subject is explicitly named in the trigger (rather than relying on a magic query string), and the combination of `reply_to_email` (outward claim confirmation with a retrieved reference) with `add_reminder` (the user's own estimate-submission deadline) \u2014 all cued explicitly by the adjuster's request to confirm, reference the policy, and track the deadline.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulEmailApp",
+      "StatefulReminderApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-17T23:55:53.987550",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/pipe_damage_claim_reply_reminder.py"
+  },
+  {
+    "scenario_id": "worn_tire_road_trip_booking",
+    "class_name": "WornTireRoadTripBooking",
+    "description": "A mechanic emails the user a photo of one of their car's front tires taken during a routine oil change, showing tread worn down to the wear bars with visible cord exposure, and asks them to reply to confirm a tire-replacement booking before any upcoming long drive. The email body (from \"Hillside Auto Service\") states that two front tires need replacing, quotes a total price, offers an availability slot tomorrow morning, and explicitly notes that driving on cords is unsafe for long trips and asks the user to confirm whether they have upcoming travel so the shop can prioritize the job. The attached photo (a local image asset seeded in Files and attached to the email) is the only source for the actual tread condition \u2014 the email says \"worn\" but does not describe the cord exposure \u2014 so the assistant must view the image to recognize the severity that justifies urgent replacement.\n\nA pre-existing reminder titled \"Weekend road trip to Tahoe\" is already in the Reminders app, dated this coming Saturday. The assistant must: (1) read the incoming email with the image attachment, (2) display/inspect the tire photo via Files to observe the bald tread and exposed cords, (3) list upcoming reminders to discover the Tahoe road trip (motivated by the mechanic's explicit question about upcoming travel), (4) proactively propose replying to Hillside Auto Service to confirm the tire-replacement booking for tomorrow morning \u2014 noting the upcoming road trip as the reason for urgency \u2014 and creating a reminder to drop off the car for the tire appointment before the weekend trip, and (5) after user acceptance, reply to the mechanic's email confirming the booking and create the reminder with `due_datetime` set to tomorrow morning and a description referencing the road trip.\n\nThis scenario exercises multimodal grounding on a photo of a physical part where vision supplies condition/severity (cord exposure) that the email text deliberately understates, cross-app coordination across Email + Files + Reminders, the use of `list_upcoming_reminders` to discover an existing commitment that motivates urgency (rather than scanning all reminders), and the combination of `reply_to_email` (outward booking confirmation to the shop) with `add_reminder` (the owner's own drop-off tracking) \u2014 all cued explicitly by the mechanic's request to confirm the booking and disclose upcoming travel.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulEmailApp",
+      "StatefulReminderApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-17T23:57:33.678979",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/worn_tire_road_trip_booking.py"
+  },
+  {
+    "scenario_id": "found_dog_neighborhood_alert_email",
+    "class_name": "FoundDogNeighborhoodAlertEmail",
+    "description": "Agent composes a neighborhood lost-pet alert email with a found-dog photo and sets a follow-up reminder before the county-shelter deadline.\n\nA neighbor (\"Jen R.\") emails the user a photo of a friendly stray dog she found in her yard this morning, with no collar. The attached photo (a local image asset seeded in Files and attached to the email) is the only source for the dog's appearance \u2014 color, markings, and approximate breed \u2014 so the assistant must view the image to describe the dog in the alert; the email body deliberately does not name those visual details. The email body explicitly asks the user to send the photo to the neighborhood alert mailing list at neighborhood-alerts@example.org so a nearby owner might recognize the dog, and to set a reminder to follow up with Jen before she takes the dog to the county shelter tomorrow at 6pm.\n\nThe assistant must: (1) read the incoming email with the image attachment, (2) display/inspect the dog photo via Files to observe the dog's appearance, (3) proactively propose composing a fresh alert email to the neighborhood list with the photo attached and a description of the dog taken from the image, plus creating a follow-up reminder due before the shelter deadline, and (4) after user acceptance, compose and send the alert email (start_compose \u2192 set_recipients / set_subject / set_body \u2192 attach_file \u2192 send_composed_email) and create the reminder with due_datetime set to before the shelter deadline stated in the email body.\n\nThis scenario exercises multimodal grounding on a photo of an animal where vision supplies appearance/identity rather than printed text, cross-app coordination across Email + Files + Reminders, the novel use of the email compose flow (start_compose with set_recipients/set_subject/set_body/attach_file/send_composed_email) rather than reply/forward to share a photo with a fresh recipient and a personalized description, and a follow-up reminder whose due date is sourced from the email body \u2014 all cued explicitly by the neighbor's request to share the photo and track the shelter deadline.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulEmailApp",
+      "StatefulReminderApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-17T23:58:45.666792",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/found_dog_neighborhood_alert_email.py"
+  },
+  {
+    "scenario_id": "roof_hail_damage_repair_approval",
+    "class_name": "RoofHailDamageRepairApproval",
+    "description": "Agent approves a roofing repair estimate from a hail-damage inspection photo and saves the photo for the user's claim records.\n\nA roofing contractor (\"Summit Roofing\") emails the user a photo taken during a roof inspection showing hail damage \u2014 dented and pocked shingles \u2014 and asks the user to: download the attached photo for their own claim records, reply to approve the repair estimate so materials can be ordered, and set a reminder to track the install appointment on the date stated in the email body. The attached photo (a local image asset seeded in Files and attached to the email) is the only source for the actual damage appearance; the email says \"hail damage\" but does not describe the shingle condition, so the assistant must view the image to confirm the damage is consistent with hail before proposing approval.\n\nThe assistant must: (1) read the incoming email with the image attachment, (2) display/inspect the roof photo via Files to observe the dented shingles, (3) download the attachment into a Files directory so the user keeps a copy for their claim records, (4) proactively propose replying to Summit Roofing to approve the estimate and creating an install-appointment reminder for the date stated in the email body, and (5) after user acceptance, reply to the contractor's email approving the repair and create the reminder with due_datetime set to the install date from the email body.\n\nThis scenario exercises multimodal grounding on a photo of physical damage where vision supplies condition/appearance (dented shingles) that the email text deliberately does not describe, cross-app coordination across Email + Files + Reminders, the novel use of `download_attachments` to persist an incoming damage photo for the user's own claim records, and the combination of `reply_to_email` (outward approval to the contractor) with `add_reminder` (the owner's own install-appointment tracking) \u2014 all cued explicitly by the contractor's request to save the photo, approve the estimate, and track the install date.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulEmailApp",
+      "StatefulReminderApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T00:00:55.663994",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/roof_hail_damage_repair_approval.py"
+  },
+  {
+    "scenario_id": "broken_planter_replacement_order",
+    "class_name": "BrokenPlanterReplacementOrder",
+    "description": "A roommate sends a Messages conversation reporting that a package from the user's recent shopping order arrived with one item broken, and asks the user to arrange a replacement.\n\nThe incoming message includes the order number (#ORD-4821) and a photo attachment showing the damaged contents; the photo is reachable by opening the conversation and downloading the attachment, then displayed via Files at a sandbox path. The assistant must: (1) read the incoming message, (2) view the broken-item photo and infer from visual evidence that a white ceramic planter is shattered, (3) look up order #ORD-4821 in Shopping via list_orders / view_order to confirm which line item was the planter, (4) search Shopping for a matching replacement planter, (5) proactively propose adding the replacement to cart and replying to the roommate, and (6) after user acceptance, add the replacement planter to cart and send a confirmation message back to the roommate.\n\nThe photo is required because the message only says \"one item broken\" without naming which one; vision identifies the shattered white ceramic planter, and the replacement search depends on matching that item against the order's line items. This scenario exercises multimodal damage identification, cross-app order lookup through Shopping, and a user-gated cart write plus an outbound reply in a shared conversation.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulShoppingApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T00:45:50.162322",
+    "source_path": "/private/var/folders/qg/6jfhl0t97clglm75n97z7jrw0000gn/T/pytest-of-jasonz/pytest-7/test_export_final_scenario_use0/generated_scenarios/broken_planter_replacement_order.py"
+  },
+  {
+    "scenario_id": "party_cake_stand_group_buy",
+    "class_name": "PartyCakeStandGroupBuy",
+    "description": "A three-person group chat is planning a surprise birthday party. One friend, who is at the bakery picking up the cake, posts a photo of the cake they ordered and asks the user (who is near a party-supplies shop) to grab a matching cake stand and use any applicable discount code before checking out, then report the total back to the group. The cake photo is delivered as a message attachment in the existing group conversation; the assistant must open the conversation, download the attachment, and display it via Files at a sandbox path to inspect it.\n\nThe assistant must: (1) open the group conversation in Messages and read the incoming request, (2) view the cake photo and infer from visual evidence that it is a tall multi-tier round cake (so a tall tiered stand is required, not a flat plate), (3) search Shopping for a cake stand and identify a tall tiered variant, (4) call the Shopping discount-code APIs to find a code that applies to that item and verify it, (5) proactively propose to the user: add the stand to cart, check out with the discount, and reply to the group with the total, and (6) after the user accepts, add the stand to cart, check out with the verified discount code, and send a reply to the same group conversation with the order total. The photo is required because the message only says \"a cake\" without describing tier count or shape; vision determines which stand variant fits, and the discount-code lookup + checkout depend on first grounding the correct product. This scenario exercises multimodal product-shape inference, group-conversation reading and replying, discount-code discovery and verification, and a user-gated discounted checkout with an outbound group reply.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulShoppingApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T00:46:16.897768",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/party_cake_stand_group_buy.py"
+  },
+  {
+    "scenario_id": "duplicate_plant_order_cancel",
+    "class_name": "DuplicatePlantOrderCancel",
+    "description": "A friend offers a free houseplant via a Messages photo attachment, and the agent cancels the user's duplicate pending Shopping order after visually confirming the species match.\n\nA friend sends a message with a photo of a healthy houseplant in their apartment: they are moving next week, cannot take their plants, and offer this one free if the user picks it up this weekend, adding it \"could save you from having to buy one.\" The photo is delivered as a Messages attachment; the assistant must open the conversation, download the attachment, and display it via Files at a sandbox path to inspect it. The assistant must: (1) read the incoming message, (2) view the photo and infer from the split-leaf visual evidence that the plant is a Monstera deliciosa, (3) list the user's Shopping orders and view the single pending (not-yet-delivered) order to confirm its line item is a Monstera deliciosa of the same species, (4) proactively propose canceling the pending paid order and replying to accept the friend's free plant, and (5) after user acceptance, cancel the order and send a reply to the friend. The photo is required because the message only says \"this plant\" without naming the species; vision identifies the Monstera so the agent can safely match it against the user's pending order line item and avoid canceling an order for a different plant.\n\nThis scenario exercises multimodal plant-species identification from a single photo, cross-app order lookup and matching via Shopping's list_orders / view_order, the rarely-used cancel_order side effect, and a user-gated cancellation plus an outbound reply in a one-to-one conversation.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulShoppingApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T00:47:00.412198",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/duplicate_plant_order_cancel.py"
+  },
+  {
+    "scenario_id": "cart_swap_stick_blender_sale",
+    "class_name": "CartSwapStickBlenderSale",
+    "description": "A friend spots a stick blender on sale at a kitchen shop and messages the user a photo, suggesting they swap out the pricier one currently sitting in their cart. The photo (a real product shot of a purple-handled immersion blender with a whisk attachment) is delivered as a Messages attachment in an existing one-to-one conversation; the assistant must open the conversation, download the attachment, and display it via Files at a sandbox path to inspect it. The message text reads: \"Saw this at the shop \u2014 purple stick blender on sale for $32. You mentioned you were about to buy one \u2014 if you haven't checked out yet, swap it in? Way cheaper than yours.\" The assistant must: (1) read the incoming message, (2) view the photo and infer from visual evidence that the product is a purple-handled immersion/stick blender (so the correct variant can be matched in the catalog, not just any blender), (3) list the user's current Shopping cart to confirm it already contains an immersion blender line item, (4) search Shopping for a purple stick blender matching the photo and confirm the sale price, (5) proactively propose to the user: remove the existing immersion blender from the cart, add the cheaper purple one, and reply to the friend confirming the swap, and (6) after the user accepts, remove the old line item from the cart, add the new one, and send a reply to the same conversation. The photo is required because the message only says \"purple stick blender\" without naming the brand or model; vision determines which catalog variant matches, and the cart-swap depends on first grounding both the existing cart item (via list_cart) and the replacement product (via search_product). This scenario exercises multimodal product-variant identification, cart inspection via list_cart, the rarely-used remove_from_cart side effect combined with add_to_cart, and a user-gated cart swap plus an outbound reply in a one-to-one conversation.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulShoppingApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T00:47:30.659968",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/cart_swap_stick_blender_sale.py"
+  },
+  {
+    "scenario_id": "pet_food_variant_checkout",
+    "class_name": "PetFoodVariantCheckout",
+    "description": "A friend who is out of town and has the user pet-sitting their golden retriever sends a Messages photo of the nearly-empty dog food bag and asks the user to reorder the exact same one on their behalf. The photo (a real shot of an orange-brand dog food bag with a large-breed chicken formula look) is delivered as a Messages attachment in the existing one-to-one conversation; the assistant must open the conversation, download the attachment, and display it via Files at a sandbox path to inspect it. The message text reads: \"Buddy's almost out of kibble \u2014 can you grab another bag of the same one? It's the orange bag, chicken, large breed, 12 lb. Just add it to your cart and check out, I'll Venmo you for it.\" The catalog's matching product has several variants (chicken / salmon / lamb, 6 lb / 12 lb / 24 lb) that differ by bag color and size, so the text alone does not disambiguate the variant.\n\nThe assistant must: (1) read the incoming message in Messages, (2) view the bag photo and infer from the orange bag visual that the formula is the chicken large-breed variant (not the blue salmon or green lamb bags), (3) search Shopping for a large-breed dog food product and use view_product / view_variant on the matching product to confirm the orange 12 lb chicken variant, (4) proactively propose adding that variant to the cart and checking out, and (5) after the user accepts, add the variant to the cart and complete checkout. The photo is required because the message names \"orange bag, chicken\" but the catalog lists variants by color/size, and the agent must visually match the bag in the photo to the correct variant before writing to the cart. This scenario exercises multimodal product-variant identification from packaging appearance, variant grounding via view_product and view_variant, and a user-gated cart add plus checkout on a friend's behalf in a one-to-one conversation.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulShoppingApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T00:48:03.803672",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/pet_food_variant_checkout.py"
+  },
+  {
+    "scenario_id": "birthday_gift_photo_mediation",
+    "class_name": "BirthdayGiftPhotoMediation",
+    "description": "Two friends are independently proposing a birthday gift for a mutual friend, Priya Mehta, and ask the user to mediate. Alex sends the user a one-to-one message suggesting they jointly chip in for a stand mixer. Sam separately sends the user a one-to-one message suggesting an espresso machine, attaches a photo Sam took of Priya's kitchen counter last week, and asks the user to use the photo to decide which appliance Priya doesn't already have, then start a new group chat with both Alex and Sam so the three of them can agree and split the cost. The kitchen photo is delivered as a Messages attachment in Sam's conversation; the assistant must open the conversation, download the attachment, and display it via Files at a sandbox path to inspect it.\n\nThe assistant must: (1) read both incoming one-to-one messages, (2) view Sam's kitchen photo and infer from visual evidence that an espresso machine is already sitting on Priya's counter (so Sam's own espresso machine idea is redundant, while Alex's stand mixer \u2014 not visible anywhere in the photo \u2014 is the fitting pick), (3) search Shopping for a stand mixer and use view_product to confirm a suitable model and its price (read-only \u2014 no cart write, no checkout), (4) look up Alex and Sam in Messaging contacts to resolve their user ids, (5) create a new group conversation with Alex and Sam, (6) proactively propose to the user: post the kitchen photo plus the stand mixer pick and price in the new group so Alex and Sam can settle on it, and (7) after user acceptance, send the photo and the stand mixer recommendation (with price) to the new group conversation.\n\nThe photo is required because Sam's text only says \"here's Priya's kitchen \u2014 pick whichever she doesn't have\" without describing what is on the counter; vision reveals the existing espresso machine, which inverts the naive choice (Sam's own suggestion) and resolves the conflict in favor of Alex's stand mixer. This scenario exercises multimodal kitchen-appliance identification for gift-conflict resolution, Messaging contact lookup and group conversation creation to mediate between two separately-proposing friends, Shopping read-only product grounding (search_product + view_product, no cart or checkout), and a user-gated outbound group reply carrying photo evidence plus a product recommendation.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulShoppingApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T00:49:11.287554",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/birthday_gift_photo_mediation.py"
+  },
+  {
+    "scenario_id": "moving_sale_bookshelf_neighbor_add",
+    "class_name": "MovingSaleBookshelfNeighborAdd",
+    "description": "A friend, Maya, posts in an existing three-person Messages group chat (\"Weekend Hike Crew\") a photo of a bookshelf her neighbor is selling and asks the user to coordinate the pickup directly with the seller. Her message reads: \"My neighbor Raj is selling this bookshelf for $60 \u2014 solid walnut, 5 shelves, about 5 ft tall. Looks just like the one you said you wanted for your living room. If you want it, add Raj Patel to this chat so he can arrange pickup with you directly, and let me know so I can tell him.\" The bookshelf photo is delivered as a Messages attachment in the existing group conversation; the assistant must open the conversation, download the attachment, and display it via Files at a sandbox path to inspect it.\n\nThe assistant must: (1) open the group conversation in Messages and read Maya's incoming request, (2) view the bookshelf photo and infer from visual evidence that it is a tall walnut-finish 5-shelf bookshelf (so a comparable can be found in Shopping, not just any bookshelf), (3) search Shopping for a walnut bookshelf and use view_product on a matching tall 5-shelf model to read its new price and validate that $60 is a good deal (read-only \u2014 no cart write, no checkout), (4) look up \"Raj Patel\" in Messaging contacts via lookup_user_id / get_user_id to resolve his user id, (5) proactively propose to the user: add Raj Patel to the existing group conversation and reply to the group confirming interest in the bookshelf along with the price comparison, and (6) after the user accepts, add Raj to the group conversation and send the confirmation reply to the same group conversation. The photo is required because Maya's text says \"bookshelf\" and lists attributes but the Shopping comparison needs a visually grounded match (walnut finish, tall 5-shelf form factor) to find the right comparable; vision also confirms the item matches what the user wanted before the agent endorses the deal.\n\nThis scenario exercises multimodal furniture identification from a real photo, read-only Shopping product grounding for price validation (search_product + view_product, no cart or checkout), Messaging contact lookup and the rarely-used add_participant_to_conversation side effect to bring the seller into an existing group chat, and a user-gated outbound group reply carrying a price-comparison summary.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulShoppingApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T00:49:42.377578",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/moving_sale_bookshelf_neighbor_add.py"
+  },
+  {
+    "scenario_id": "lamp_shade_finish_cart_prune",
+    "class_name": "LampShadeFinishCartPrune",
+    "description": "The user is out of town and a friend housesitting sends a Messages photo of the user's living-room table lamp with a cracked shade, asking the user to replace it. The user had already been comparison-shopping before the trip, so two candidate replacement shades (a brass-finish variant and a nickel-finish variant) are already sitting in the Shopping cart; the friend cannot tell which finish matches the lamp base from the room lighting and sends a close-up photo of just the base. The photo is delivered as a Messages attachment in the existing one-to-one conversation; the assistant must open the conversation, download the attachment, and display it via Files at a sandbox path to inspect it.\n\nThe friend's message reads: \"Bad news \u2014 I knocked the table lamp in the living room and the shade cracked. You've got two replacement shades sitting in your cart (brass and nickel) but I can't tell which one matches your lamp base from here. I'm attaching a close-up of the base \u2014 pick the matching finish, drop the other one, and check out. Code LIGHT10 should work on one of them.\" The assistant must: (1) read the incoming message in Messages, (2) view the lamp-base photo and infer from visual evidence that the base is brass-finish (so the brass shade is the match, not the nickel one), (3) list the current Shopping cart via list_cart to surface both candidate shade line items and their item ids, (4) call get_discount_code_info on LIGHT10 to confirm which shade it applies to, (5) proactively propose removing the nickel shade and checking out with the brass shade plus the LIGHT10 discount, and (6) after the user accepts, remove the nickel shade from the cart and check out with the LIGHT10 code. The photo is required because the friend's message names both candidate finishes but cannot tell which matches the lamp base; vision identifies the brass base, which determines which cart line item to keep, and the discount-code verification depends on first grounding the surviving variant.\n\nThis scenario exercises multimodal finish/material identification from a close-up product photo, cart inspection via list_cart, the rarely-used remove_from_cart side effect combined with discount-code verification (get_discount_code_info) and a discounted checkout, and a user-gated cart prune plus checkout in a one-to-one conversation.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulShoppingApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T00:50:35.326285",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/lamp_shade_finish_cart_prune.py"
+  },
+  {
+    "scenario_id": "air_fryer_clearance_duplicate_decline",
+    "class_name": "AirFryerClearanceDuplicateDecline",
+    "description": "A friend, Maya, messages the user a store-shelf photo of an air fryer on clearance and offers to pick one up; the agent checks the user's Shopping order history, confirms the user already owns the same variant, and proposes a polite decline reply.\n\nMaya's message in the existing one-to-one Messages conversation reads: \"Target has the CrispAir Air Fryer 6-quart on clearance for $79 (was $129) \u2014 want me to grab one for you? They had red and black; I snapped the red one on the shelf.\" The photo (a real shot of a red basket-style 6-quart air fryer on a store shelf) is delivered as a Messages attachment; the assistant must open the conversation, download the attachment, and display it via Files at a sandbox path to inspect it. The assistant must: (1) read Maya's incoming message, (2) view the photo and infer from visual evidence that the highlighted air fryer is the red 6-quart variant (so the agent knows which variant to match against order history, not the black one Maya also mentioned), (3) list the user's Shopping orders via list_orders and call view_order on the delivered order to read its line items, (4) confirm that a delivered order already contains a CrispAir Air Fryer 6-quart in red, (5) proactively propose to the user: reply to Maya declining the offer because the user already owns that exact variant, and (6) after the user accepts, send a polite decline reply to Maya in the same conversation. The photo is required because Maya's text names both red and black variants but only the photo shows which one she is highlighting; vision pins the variant so the agent can safely match it against the user's past order line item and avoid a duplicate purchase.\n\nThis scenario exercises multimodal product-variant identification from a store-shelf photo, read-only Shopping order-history lookup via list_orders and view_order (no cart write, no checkout), and a user-gated outbound decline reply in a one-to-one conversation.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulShoppingApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T00:51:24.210123",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/air_fryer_clearance_duplicate_decline.py"
+  },
+  {
+    "scenario_id": "espresso_friend_review_cart_prune",
+    "class_name": "EspressoFriendReviewCartPrune",
+    "description": "A friend messages a photo of a kitchen appliance she just bought and warns the user it is far bulkier than the listing photos suggested, asking the user to measure before checking out; the agent visually matches the photo to the right line item in the user's cart and offers to remove it.\n\nThe photo (a real shot of an espresso machine sitting on a kitchen counter, partially tucked under the cabinets with a steaming wand visible) is delivered as a Messages attachment in an existing one-to-one conversation; the assistant must open the conversation, download the attachment, and display it via Files at a sandbox path to inspect it. The friend's message reads: \"Got the one you were eyeing last week \u2014 heads up, it's way bigger than the listing photos looked. Barely fits under my cabinets. Might want to measure your counter before you check out.\" The message does not name the product, and the user's Shopping cart currently holds several small appliances (an espresso machine, a milk frother, and a coffee grinder), so the assistant must: (1) read the incoming message in Messages, (2) view the photo and visually identify the appliance as an espresso machine (so it can be matched to the correct cart line item, not the frother or grinder), (3) list the current Shopping cart via list_cart to surface all line items and their item ids, (4) proactively propose removing the espresso machine from the cart and replying to the friend thanking her for the heads-up, and (5) after the user accepts, remove the espresso machine line item from the cart and send the thank-you reply to the same conversation.\n\nThe photo is required because the message only says \"the one you were eyeing\" without naming the product, and the cart contains multiple candidate appliances; vision identifies the appliance type (espresso machine with a steam wand) so the agent can match it to the correct cart line item, and the cart-removal depends on that visual match. This scenario exercises multimodal appliance-type identification from a real-world in-use photo (not product packaging), cart inspection via list_cart, the rarely-used remove_from_cart side effect used for a decline rather than a swap, and a user-gated cart prune plus an outbound thank-you reply in a one-to-one conversation.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulShoppingApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T00:52:26.702975",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/espresso_friend_review_cart_prune.py"
+  },
+  {
+    "scenario_id": "bike_drivetrain_photo_share",
+    "class_name": "BikeDrivetrainPhotoShare",
+    "description": "Agent sends the user's own drivetrain photo to a bike shop ahead of a tune-up, after a calendar reminder and the shop's photo request.\n\nA calendar reminder fires for the user's \"Bike tune-up\" appointment tomorrow at 9:00am at GearHub Cycles. Soon after, a message arrives from Marco at GearHub Cycles: \"See you tomorrow at 9 for the tune-up. Can you send me a clear photo of your drivetrain (chain and cassette) so I pull the right replacement chain?\" The user keeps home-inventory photos of their bike in the sandbox file system. The assistant must:\n1. Read tomorrow's calendar events to confirm the tune-up appointment (time, shop, and context).\n2. List the sandbox file system to locate a bike drivetrain photo, then display/inspect the image to confirm it shows the chain and cassette \u2014 the visual grounding for which photo to send.\n3. Proactively propose sending the drivetrain photo to Marco via Messages.\n4. After user acceptance, send the message with the photo attached.\n\nThe drivetrain photo is seeded in SandboxLocalFileSystem (e.g., `/bike_drivetrain.jpg`) and is the user's own file; the agent accesses it by listing files and inspecting the image. Actionable specifics \u2014 the 9:00am appointment, GearHub Cycles, and Marco's request for a drivetrain photo \u2014 come from the calendar reminder and the incoming message, while the image supplies the visual content (what the bike's drivetrain actually looks like) that cannot be known from the filename alone. The trigger explicitly asks the user to \"send me a clear photo,\" motivating the file lookup and the outbound message with attachment.\n\nThis scenario exercises calendar read (reminder-triggered event lookup), multimodal inspection of a locally seeded file image, and outbound Messaging with an image attachment \u2014 a share/reply coordination flow rather than a calendar mutation.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulCalendarApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T00:53:55.699808",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/bike_drivetrain_photo_share.py"
+  },
+  {
+    "scenario_id": "rainy_picnic_pavilion_calendar_edit",
+    "class_name": "RainyPicnicPavilionCalendarEdit",
+    "description": "Agent updates a shared picnic's calendar location after a group-chat message and an attached pavilion photo.\n\nA friend posts in the \"Riverside Park Picnic\" group chat: rain is moving Saturday's noon picnic to one of the park pavilions, and they attach a photo of the pavilion they have in mind. The pavilion's identity (red-roofed, beside the pond) is only visible in the image \u2014 the message just says \"one of the pavilions.\" The user already has a \"Saturday Picnic at Riverside Park meadow\" event on their calendar for that day. The assistant must:\n1. Read the group-chat message and inspect the attached pavilion photo (viewed via the sandbox file system).\n2. Visually identify the pavilion from the photo (red roof, by the pond) so the new location can be described accurately.\n3. Search the calendar for the Saturday picnic event and propose updating its location to the visually-identified pavilion, plus replying in the group chat to ack.\n4. After user acceptance, edit the calendar event's location and send the ack reply to the group chat.\n\nThe pavilion photo is seeded in SandboxLocalFileSystem (e.g., `/riverside_pavilion.jpg`) and attached to the incoming group-chat message; the agent accesses it by reading the conversation and viewing the image. Actionable specifics \u2014 the Saturday noon picnic, the request to \"update the calendar invite\" and \"ack in the group chat\" \u2014 come from the incoming message, while the image supplies the visual content (which pavilion: red roof by the pond) that the text does not name, and the calendar edit + reply both depend on that visually-grounded description.\n\nThis scenario exercises messaging group-chat read + reply with an image attachment, multimodal identification of an outdoor location from a photo, and calendar search + event-location edit \u2014 a shared-activity rescheduling flow rather than a new-event creation or an outbound photo share.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulCalendarApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T00:55:10.090749",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/rainy_picnic_pavilion_calendar_edit.py"
+  },
+  {
+    "scenario_id": "estate_armchair_photo_confirm",
+    "class_name": "EstateArmchairPhotoConfirm",
+    "description": "Agent confirms a friend's estate-sale armchair photo matches the user's described wish and proposes replying yes plus adding a drop-off calendar event.\n\nA friend (Priya) messages in their existing Messages thread: she found a \"vintage green velvet armchair with turned wooden legs\" at an estate sale, matching what the user said they wanted for their reading nook. She attaches a photo of the chair and says the sale will hold it until 5pm today for $120; if it looks right, the user should reply yes and she will grab it and drop it at the user's place Sunday afternoon around 2pm, and asks the user to add the drop-off to their calendar so they are home. The chair's actual appearance (green velvet upholstery, turned wooden legs) is only visible in the photo \u2014 the message just names the style. The assistant must:\n1. Read the incoming message in Messages and download/inspect the attached chair photo via the sandbox file system.\n2. Visually confirm the chair matches the described style (green velvet, turned wooden legs) so the reply is grounded in what was actually found.\n3. Proactively propose replying yes to Priya and adding a Sunday 2pm \"Armchair drop-off from Priya\" calendar event.\n4. After user acceptance, send the reply and create the calendar event.\n\nThe chair photo is seeded in SandboxLocalFileSystem (e.g., `/armchair.jpg`) and attached to the incoming Messages thread; the agent accesses it by reading the conversation, downloading the attachment, and viewing the image. Actionable specifics \u2014 the 5pm hold deadline, $120 price, Sunday 2pm drop-off, and the explicit asks to \"reply yes\" and \"add the drop-off to your calendar\" \u2014 come from the incoming message, while the image supplies the visual content (green velvet armchair with turned legs) that the reply's confirmation depends on and that cannot be known from the filename alone.\n\nThis scenario exercises messaging conversation read + attachment download + outbound reply, multimodal confirmation of a real-world object's appearance against a text description, and calendar event creation for a coordinated drop-off \u2014 a visual-match-then-confirm coordination flow rather than a calendar-location edit or an outbound photo share.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulCalendarApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T00:56:12.572574",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/estate_armchair_photo_confirm.py"
+  },
+  {
+    "scenario_id": "hike_trailhead_change_add_rider",
+    "class_name": "HikeTrailheadChangeAddRider",
+    "description": "Agent reschedules a Saturday hike's trailhead and start time, and adds a new rider to the group chat, after a friend's message and attached trailhead photo.\n\nIn the existing \"Saturday Hike Crew\" group chat (with Marco and Priya), Marco posts: Cedar Ridge trailhead lot is closed for repaving, so let's meet at the north entrance instead \u2014 he attaches a photo of the meeting spot (a trailhead with a large carved wooden bear statue and a \"Pine Hollow\" entrance sign). He also asks the user to push the start from 8:00am to 8:30am so his friend Dana can make it, and to please add Dana to this chat so she can see the carpool plan. The user already has a \"Saturday Hike \u2014 Cedar Ridge Loop\" calendar event for this Saturday at 8:00am. The assistant must:\n1. Read the group chat message and inspect the attached trailhead photo (downloaded via the sandbox file system).\n2. Visually identify the new meeting spot as the Pine Hollow trailhead (bear statue + sign) so the calendar location and group reply can name it accurately \u2014 the message only says \"the north entrance\" and never names Pine Hollow.\n3. Look up Dana in messaging contacts, then propose adding her to the group chat, updating the calendar event's location to \"Pine Hollow Trailhead (north entrance, bear statue)\" and start time to 8:30am, and replying in the group chat to confirm the new plan.\n4. After user acceptance, add Dana to the group conversation, edit the calendar event's location and start time, and send the confirmation reply to the group chat.\n\nThe trailhead photo is seeded in SandboxLocalFileSystem (e.g., `/pine_hollow_trailhead.jpg`) and attached to Marco's incoming group-chat message; the agent accesses it by reading the conversation, downloading the attachment, and viewing the image. Actionable specifics \u2014 the closed Cedar Ridge lot, the 8:30am start change, the explicit ask to \"add Dana to this chat,\" and the request to meet at the trailhead in the photo \u2014 come from the incoming message, while the image supplies the visual content (Pine Hollow trailhead with the carved bear statue) that the calendar location edit and reply both depend on and that cannot be known from the filename or message text alone.\n\nThis scenario exercises messaging group-chat read + add-participant + reply with an image attachment, multimodal identification of an outdoor meeting spot from a photo, and calendar search + event time-and-location edit \u2014 a shared-activity rescheduling plus group-roster update flow rather than a new-event creation, a location-only edit, or an outbound photo share.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulCalendarApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T00:57:05.091821",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/hike_trailhead_change_add_rider.py"
+  },
+  {
+    "scenario_id": "ramen_storefront_group_calendar",
+    "class_name": "RamenStorefrontGroupCalendar",
+    "description": "Agent coordinates a Friday ramen outing by reading a storefront photo, starting a new group chat, and adding a tagged calendar event with attendees.\n\nMarco messages in the user's existing 1:1 Messages thread: \"Friday 7pm, wanna check this place out? Start a group with me and Dana so we can plan the meetup, and add it to the calendar.\" He attaches a photo of a ramen shop storefront but never names the restaurant in the text. The shop's identity (a \"Koji Ramen\" sign over a red awning with a steaming-bowl logo) is only visible in the image. The assistant must:\n1. Read Marco's message and inspect the attached storefront photo (downloaded via the sandbox file system) to identify the venue as Koji Ramen \u2014 the visual grounding for the calendar title/location and the reply.\n2. Look up Dana in messaging contacts via fuzzy lookup, then propose creating a new group conversation with Marco and Dana plus a Friday 7pm \"Ramen at Koji Ramen\" calendar event tagged \"social\" with Marco and Dana as attendees.\n3. After user acceptance, create the group conversation, add the tagged calendar event with attendees, and reply in the new group chat with the plan.\n\nThe storefront photo is seeded in SandboxLocalFileSystem (e.g., `/koji_ramen_storefront.jpg`) and attached to Marco's incoming message; the agent accesses it by reading the conversation, downloading the attachment, and viewing the image. Actionable specifics \u2014 the Friday 7pm time, and the explicit asks to \"start a group with me and Dana\" and \"add it to the calendar\" \u2014 come from the incoming message, while the image supplies the visual content (Koji Ramen storefront with the red awning and sign) that the calendar title/location and the reply's venue reference depend on and that cannot be known from the filename or message text alone.\n\nThis scenario exercises messaging conversation read + attachment download + fuzzy contact lookup (`lookup_user_id`) + new group conversation creation + group reply, multimodal identification of a real-world storefront from a photo, and calendar event creation with attendees and a tag \u2014 a new-outing coordination flow rather than an existing-event edit, a participant-add-to-existing-chat, or an outbound photo share.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulCalendarApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T00:57:40.063902",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/ramen_storefront_group_calendar.py"
+  },
+  {
+    "scenario_id": "bookclub_cafe_photo_relocate",
+    "class_name": "BookclubCafePhotoRelocate",
+    "description": "Agent relocates an existing book-club calendar event and drops the canceling host from the RSVP after a group-chat message with a cafe storefront photo.\n\nIn the existing \"Saturday Book Club\" group chat (Priya, Marco, Dana, and the user), Priya posts: her kitchen flooded and she can't host this Saturday's 4pm meeting; she's at a cafe now that agreed to host the group Saturday at 4pm \u2014 \"the one in the photo\" \u2014 and asks the user to update the calendar to that cafe, drop her from the RSVP since she'll be with the plumber all afternoon, and confirm in the chat once it's done. She attaches a storefront photo of the cafe; the cafe's name (e.g., \"The Reading Room\" on its awning) is only visible in the image \u2014 the message never names it. The user already has a \"Saturday Book Club\" calendar event tagged \"bookclub\" for this Saturday at 4pm at Priya's place, with Priya, Marco, and Dana as attendees. The assistant must:\n1. Read the group-chat message and download/inspect the attached cafe storefront photo via the sandbox file system to identify the cafe by its awning sign.\n2. Find the existing Saturday book-club event in the Calendar (via the \"bookclub\" tag or a \"Book Club\" search) and propose updating its location to the visually-identified cafe and removing Priya from the attendees, plus replying in the group chat to confirm.\n3. After user acceptance, edit the calendar event's location and attendee list (Priya removed), and send the confirmation reply to the group chat.\n\nThe cafe storefront photo is seeded in SandboxLocalFileSystem (e.g., `/reading_room_storefront.jpg`) and attached to Priya's incoming group-chat message; the agent accesses it by reading the conversation, downloading the attachment, and viewing the image. Actionable specifics \u2014 the Saturday 4pm meeting, the explicit asks to update the calendar, drop Priya from the RSVP, and confirm in chat, plus the cafe being \"the one in the photo\" \u2014 come from the incoming message, while the image supplies the visual content (the cafe's name on its awning) that the calendar location and the reply both depend on and that cannot be known from the filename or message text alone.\n\nThis scenario exercises messaging group-chat read + attachment download + outbound group reply, multimodal identification of a real-world storefront from a photo, and calendar tag-filter/search + existing-event location-and-attendee edit (removing a canceling host) \u2014 a relocate-and-update-RSVP coordination flow rather than a new-event creation, a new-group creation, or an outbound photo share.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulCalendarApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T00:58:54.324008",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/bookclub_cafe_photo_relocate.py"
+  },
+  {
+    "scenario_id": "soccer_pitch_flood_cancel",
+    "class_name": "SoccerPitchFloodCancel",
+    "description": "Agent cancels a Saturday soccer game after a group-chat message and a photo showing a waterlogged pitch.\n\nIn the existing \"Saturday Soccer Crew\" group chat (Marco, Dana, and the user), Marco posts that he just walked by the pitch and attaches a photo of it; he says the pitch looks unplayable, asks the assistant to confirm from the photo whether this Saturday's 10am game should be called off, and if so to delete the matching calendar event and reply in the group chat so everyone knows it's cancelled. The pitch's actual condition (standing water and mud across the field) is only visible in the photo \u2014 the message never uses the word \"flooded\" or \"waterlogged,\" it only says \"looks unplayable\" and asks the assistant to confirm from the image. The user already has a \"Saturday Soccer at Riverside Pitch 3\" calendar event tagged \"sports\" for this Saturday at 10am. The assistant must:\n1. Read the group-chat message and download/inspect the attached pitch photo via the sandbox file system.\n2. Visually confirm the pitch is waterlogged/unplayable so the cancellation proposal is grounded in what the image actually shows, not just Marco's opinion.\n3. Search the calendar for the Saturday soccer event (by \"soccer\" search or the \"sports\" tag) and proactively propose deleting it and replying in the group chat to confirm the cancellation.\n4. After user acceptance, delete the calendar event and send the cancellation reply to the group chat.\n\nThe pitch photo is seeded in SandboxLocalFileSystem (e.g., `/riverside_pitch_flooded.jpg`) and attached to Marco's incoming group-chat message; the agent accesses it by reading the conversation, downloading the attachment, and viewing the image. Actionable specifics \u2014 the Saturday 10am game, the asks to confirm from the photo, delete the event, and reply in the group chat \u2014 come from the incoming message, while the image supplies the visual content (the waterlogged field condition) that the cancellation proposal depends on and that cannot be known from the filename or message text alone.\n\nThis scenario exercises messaging group-chat read + attachment download + outbound group reply, multimodal condition assessment of an outdoor field from a photo, and calendar search + event deletion \u2014 a condition-grounded cancellation flow rather than a new-event creation, an existing-event edit, or an outbound photo share.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulCalendarApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T01:00:40.186109",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/soccer_pitch_flood_cancel.py"
+  },
+  {
+    "scenario_id": "trifle_potluck_calendar_by_attendee",
+    "class_name": "TriflePotluckCalendarByAttendee",
+    "description": "Agent adds a potluck calendar event on behalf of the hosting friend and renames the group chat after identifying the dessert theme from a photo.\n\nIn the existing \"Potluck Crew\" group chat (Priya, Marco, Dana, and the user), Priya posts: she is hosting this Sunday's 6pm potluck at her place and the theme is the dessert in the attached photo. She asks the user to add the potluck to everyone's calendar on her behalf since she will be cooking all day, to rename the group chat to include the dessert theme so the crew remembers what to bring, and to reply in the chat once it is done. The dessert's identity (a layered trifle in a glass bowl \u2014 sponge, custard, and berries) is only visible in the photo \u2014 the message never names it. The assistant must:\n1. Read the group-chat message and download/inspect the attached dessert photo via the sandbox file system.\n2. Visually identify the dessert as a trifle so the calendar title and the renamed chat can name the theme accurately.\n3. Proactively propose creating a Sunday 6pm \"Potluck \u2014 Trifle Night\" calendar event on Priya's behalf (with Priya, Marco, and Dana as attendees, at Priya's place), renaming the group chat to \"Potluck Crew \u2014 Trifle Night\", and replying in the chat to confirm.\n4. After user acceptance, create the event via add_calendar_event_by_attendee on Priya's behalf, rename the conversation, and send the confirmation reply to the group chat.\n\nThe trifle photo is seeded in SandboxLocalFileSystem (e.g., `/trifle_dessert.jpg`) and attached to Priya's incoming group-chat message; the agent accesses it by reading the conversation, downloading the attachment, and viewing the image. Actionable specifics \u2014 the Sunday 6pm time, Priya's place as the venue, and the explicit asks to add the event \"on my behalf,\" rename the chat to the theme, and reply \u2014 come from the incoming message, while the image supplies the visual content (the layered trifle) that the calendar title and chat rename depend on and that cannot be known from the filename or message text alone.\n\nThis scenario exercises messaging group-chat read + attachment download + conversation-title rename + outbound group reply, multimodal identification of a real-world dessert from a photo, and calendar event creation on behalf of a specific attendee (add_calendar_event_by_attendee) \u2014 a host-delegated coordination flow rather than a self-authored event creation, an existing-event edit, or an outbound photo share.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulCalendarApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T01:01:25.152741",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/trifle_potluck_calendar_by_attendee.py"
+  },
+  {
+    "scenario_id": "pet_sitting_shift_handoff",
+    "class_name": "PetSittingShiftHandoff",
+    "description": "Agent swaps onto a friend's pet-sitting shift after a group-chat message and a photo of the cat's feeding setup.\n\nIn the existing \"Pet Sitters Co-op\" group chat (Marco, Dana, and the user), Marco posts: a family emergency came up and he's flying out tonight, so he can't cover Dana's cat-sitting shift this Thursday at 6pm that he had signed up for. He attaches a photo of Dana's cat's feeding station (the cat herself plus two color-coded food bins) and asks the user to take the shift, update the existing \"Cat-sitting for Dana\" calendar event to swap himself out and the user in, remove him from this chat since he'll be offline, and reply in the chat to confirm so Dana knows it's covered. The cat's appearance (an orange tabby with a white front paw) and which bin is the wet vs dry food are only visible in the photo \u2014 the message never describes them. The assistant must:\n1. Read the group-chat message and download/inspect the attached feeding-station photo via the sandbox file system to identify the cat and the food-bin colors so the reply can acknowledge the routine.\n2. Search the calendar for the Thursday \"Cat-sitting for Dana\" event and propose editing its attendee list to remove Marco and add the user, removing Marco from the group conversation, and replying in the chat to confirm the swap.\n3. After user acceptance, edit the calendar event's attendees, remove Marco from the group chat, and send the confirmation reply to the group chat.\n\nThe feeding-station photo is seeded in SandboxLocalFileSystem (e.g., `/dana_cat_feeding.jpg`) and attached to Marco's incoming group-chat message; the agent accesses it by reading the conversation, downloading the attachment, and viewing the image. Actionable specifics \u2014 the Thursday 6pm shift, and the explicit asks to take the shift, update the calendar, remove Marco from the chat, and reply \u2014 come from the incoming message, while the image supplies the visual content (the orange tabby and the color-coded food bins) that the reply's confirmation depends on and that cannot be known from the filename or message text alone.\n\nThis scenario exercises messaging group-chat read + attachment download + remove-participant + outbound group reply, multimodal identification of a pet and its feeding setup from a photo, and calendar search + existing-event attendee edit \u2014 a shift-swap handoff coordination flow rather than a new-event creation, a location edit, or an outbound photo share.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulCalendarApp",
+      "PAREAgentUserInterface",
+      "HomeScreenSystemApp"
+    ],
+    "timestamp": "2026-07-18T01:02:04.888858",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/pet_sitting_shift_handoff.py"
+  },
+  {
+    "scenario_id": "garden_pest_damage_workday",
+    "class_name": "GardenPestDamageWorkday",
+    "description": "Agent coordinates a community-garden pest-cleanup workday after a group-chat message and a photo of damaged tomato plants.\n\nIn the existing \"Cedar Street Garden Crew\" group chat (Priya, Marco, Dana, and the user), Priya posts: she checked the beds this morning and the tomato plants look bad, and she attaches a photo of the affected bed. She asks the user to add a Sunday 8am \"Garden workday \u2014 tomato bed cleanup\" calendar event at the Cedar Street Community Garden, to add Sam Reyes (a new neighbor who texted her separately and offered to help this weekend) to this chat so he can see the plan, and to reply in the chat once it's done. The specific damage (tomato hornworms \u2014 large green caterpillars and chewed, ragged leaves) is only visible in the photo \u2014 the message just says \"look bad\" and never names the pest. The assistant must:\n1. Read the group-chat message and download/inspect the attached garden photo via the sandbox file system to identify the pest damage so the workday title and reply can name the cleanup target accurately.\n2. Look up Sam Reyes in messaging contacts via fuzzy lookup (`lookup_user_id`), then propose creating the Sunday 8am \"Garden workday \u2014 tomato bed cleanup\" calendar event at Cedar Street Community Garden (with Priya, Marco, and Dana as attendees), adding Sam to the group chat, and replying in the chat with the plan.\n3. After user acceptance, create the calendar event, add Sam to the group conversation, and send the confirmation reply to the group chat.\n\nThe tomato-bed photo is seeded in SandboxLocalFileSystem (e.g., `/garden_tomato_pest.jpg`) and attached to Priya's incoming group-chat message; the agent accesses it by reading the conversation, downloading the attachment, and viewing the image. Actionable specifics \u2014 the Sunday 8am time, the Cedar Street Community Garden venue, Sam Reyes as the neighbor to add, and the explicit asks to add the event, add Sam to the chat, and reply \u2014 come from the incoming message, while the image supplies the visual content (the hornworm-chewed tomato leaves) that the workday title and reply's cleanup target depend on and that cannot be known from the filename or message text alone.\n\nThis scenario exercises messaging group-chat read + attachment download + fuzzy contact lookup (`lookup_user_id`) + add-participant-to-existing-conversation + outbound group reply, multimodal identification of real-world plant pest damage from a photo, and calendar event creation with attendees, tag, and location \u2014 a community-garden workday coordination flow rather than an existing-event edit, a chat rename, a new-group creation, or an outbound photo share.",
+    "apps": [
+      "SandboxLocalFileSystem",
+      "StatefulMessagingApp",
+      "StatefulCalendarApp",
+      "HomeScreenSystemApp",
+      "PAREAgentUserInterface"
+    ],
+    "timestamp": "2026-07-18T01:03:07.410501",
+    "source_path": "pare/scenarios/multimodal_benchmark/generated_scenarios/garden_pest_damage_workday.py"
   }
 ]

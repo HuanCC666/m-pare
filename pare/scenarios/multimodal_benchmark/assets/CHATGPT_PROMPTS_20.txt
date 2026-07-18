@@ -1,0 +1,288 @@
+ChatGPT image prompts for 20 new scenarios (Step 1.5 placeholders)
+For each: paste the prompt into ChatGPT Images, save with the exact filename into the folder.
+
+========================================================================
+BATCH A — Files + Messaging + Shopping (10)
+========================================================================
+
+1. broken_planter_replacement_order
+   SAVE AS: IMG_2411.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/broken_planter_replacement_order/
+   PROMPT:
+   A realistic close-up smartphone photo of an opened cardboard shipping box on a kitchen floor. Inside the box lies a shattered white ceramic planter broken into several large sharp shards, with loose soil and a small succulent plant spilled out among the pieces. Natural daylight from a window, slightly cluttered home background, shallow phone-camera focus on the broken ceramic pieces. No readable text, no labels, no receipt.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: shattered white ceramic planter, broken into multiple sharp shards, loose soil and small succulent spilled out, opened cardboard shipping box, home kitchen floor setting, natural daylight
+
+
+2. party_cake_stand_group_buy
+   SAVE AS: IMG_3092.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/party_cake_stand_group_buy/
+   PROMPT:
+   A realistic smartphone photo of a tall three-tier round birthday cake on a bakery counter, white frosting with pastel pink and blue piped decorations, a small 'Happy Birthday' topper, soft natural bakery lighting, slightly off-center casual phone-camera framing, no readable price tags or receipts, shallow depth of field. The cake's tall tiered silhouette is clearly visible so a viewer can tell it needs a tall tiered stand rather than a flat plate.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: tall three-tier round cake, multiple visible stacked tiers of decreasing width, round cylindrical silhouette, bakery counter setting, pastel birthday decorations
+
+
+3. duplicate_plant_order_cancel
+   SAVE AS: IMG_2411.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/duplicate_plant_order_cancel/
+   PROMPT:
+   A realistic, natural smartphone photo of a healthy Monstera deliciosa houseplant in a terracotta pot on a sunny apartment windowsill. The plant has large, glossy green leaves with the characteristic split-leaf fenestrations and natural holes of a mature Monstera. Soft indoor daylight, slightly imperfect casual phone-camera framing, no text, no watermark, no people visible. Focus on the distinctive leaf shape so the species is clearly identifiable.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: a potted houseplant, large green leaves with split-leaf fenestrations, characteristic Monstera deliciosa leaf holes and lobes, terracotta pot, apartment windowsill setting, natural soft daylight
+
+
+4. cart_swap_stick_blender_sale
+   SAVE AS: IMG_2411.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/cart_swap_stick_blender_sale/
+   PROMPT:
+   A realistic product-style photograph of a purple-handled immersion stick blender with a stainless-steel shaft and a detachable whisk attachment resting beside it, shot on a clean light kitchen counter with soft natural lighting, shallow depth of field, no visible brand logos, no readable text or price tags, e-commerce catalog style, centered composition.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: purple-handled immersion/stick blender, stainless-steel blending shaft, detachable whisk attachment visible beside the blender, clean light kitchen counter background, no readable brand name or model number, no visible price tag or printed label
+
+
+5. pet_food_variant_checkout
+   SAVE AS: IMG_2411.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/pet_food_variant_checkout/
+   PROMPT:
+   A realistic casual smartphone photo of a nearly-empty bag of dry dog food standing on a kitchen floor, shot from a slight angle in warm indoor lighting. The bag is a matte orange/kraft-orange color with a photo of a happy golden retriever on the lower front and minimal branding; the bag looks mostly crumpled and near-empty at the top. No readable price tag, no readable small text, no barcode legible. The scene reads clearly as 'orange dog food bag' at a glance.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: orange/kraft-orange colored dog food bag, golden retriever pictured on the bag, bag appears nearly empty and crumpled, kitchen floor background, no legible price, barcode, or dense label text
+
+
+6. birthday_gift_photo_mediation
+   SAVE AS: IMG_2411.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/birthday_gift_photo_mediation/
+   PROMPT:
+   A realistic smartphone snapshot of a friend's kitchen counter taken from across the room in warm late-afternoon light. The counter is light beige quartz with a few small appliances and a wooden cutting board. A stainless steel espresso machine with a portafilter and a small cup on its drip tray sits prominently on the right side of the counter. Next to it are a ceramic canister and a knife block. There is no stand mixer, no blender, and no other large countertop appliance visible. Soft natural window light, slight phone-camera grain, shallow depth of field, no readable text or labels.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: stainless steel espresso machine with portafilter on kitchen counter, light beige quartz countertop, wooden cutting board and ceramic canister nearby, no stand mixer visible anywhere in the frame, no blender or other large countertop appliance visible, phone-photo aesthetic, warm natural window light
+
+
+7. moving_sale_bookshelf_neighbor_add
+   SAVE AS: bookshelf.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/moving_sale_bookshelf_neighbor_add/
+   PROMPT:
+   A realistic amateur phone photo of a tall wooden bookshelf standing against a plain apartment living-room wall. The bookshelf is about 5 feet tall with exactly five horizontal shelves, solid walnut wood with a warm dark-brown grain finish, rectangular upright sides, no doors or glass. A few hardcover books and a small potted plant sit on the shelves for scale. Soft indoor daylight, slightly casual framing like a neighbor's moving-sale snapshot, natural shadows. No visible price tags, labels, or text.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: tall wooden bookshelf about 5 ft, exactly five shelves, solid walnut dark-brown wood finish, rectangular upright sides, no doors or glass, indoor living-room setting for scale
+
+
+8. lamp_shade_finish_cart_prune
+   SAVE AS: lamp_base_closeup.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/lamp_shade_finish_cart_prune/
+   PROMPT:
+   A close-up photograph of a table lamp base sitting on a wooden living-room side table. The base is turned metal with a warm polished brass finish — golden, yellowish-gold metallic sheen with subtle patina in the crevices, not silver or chrome. Soft indoor lamp-lit lighting, shallow depth of field, natural smartphone photo look. No readable labels, text, or branding visible. The photo frames only the lower base portion of the lamp, no shade attached.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: table lamp base only, no shade, warm brass finish: golden yellowish-gold metallic color, polished metal with subtle patina in crevices, not silver, chrome, or nickel-colored, indoor living-room lighting, smartphone photo aesthetic, no readable text or labels
+
+
+9. air_fryer_clearance_duplicate_decline
+   SAVE AS: air_fryer_shelf.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/air_fryer_clearance_duplicate_decline/
+   PROMPT:
+   A realistic smartphone snapshot of a store shelf at Target showing a red basket-style 6-quart CrispAir air fryer prominently in the foreground, still in its open retail box with the fryer unit visible, price clearance tag on the shelf, slightly cluttered retail background with other kitchen appliances blurred out, natural fluorescent store lighting, shot from a shopper's eye level, amateur phone photo aesthetic with mild grain, no readable text other than a small generic clearance tag.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: red basket-style air fryer, 6-quart size visible on the unit/box shape, store shelf retail setting, clearance tag present, shot from a shopper's perspective
+
+
+10. espresso_friend_review_cart_prune
+   SAVE AS: espresso_counter.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/espresso_friend_review_cart_prune/
+   PROMPT:
+   A realistic amateur smartphone photo of a home espresso machine sitting on a kitchen counter, partially tucked under the upper cabinets with only a couple of inches of clearance. The machine is stainless steel with a visible portafilter handle, a steam wand extending from the side, and a small drip tray. A coffee mug sits nearby. Warm kitchen lighting, slightly cluttered counter with a few items in the background, natural home snapshot feel. No readable text or logos.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: espresso machine body, visible steam wand, portafilter handle, stainless steel finish, sitting on a kitchen counter, tucked partially under upper cabinets showing tight clearance
+
+========================================================================
+BATCH B — Files + Messaging + Calendar (10)
+========================================================================
+
+1. bike_drivetrain_photo_share
+   SAVE AS: bike_drivetrain.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/bike_drivetrain_photo_share/
+   PROMPT:
+   A clear, close-up color photograph of a bicycle drivetrain taken in a home garage: the rear cassette (stack of gears) and chain visible on the right side of the bike, with the wheel and derailleur partially in frame. Natural daylight, slightly messy residential garage background, focus sharp on the cassette teeth and chain links. No text, no people, no hands. Realistic amateur phone-camera photo.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: bicycle rear cassette (stack of gears), bike chain draped across cassette, rear derailleur partially visible, home garage setting, daylight, sharp focus on drivetrain
+
+
+2. rainy_picnic_pavilion_calendar_edit
+   SAVE AS: riverside_pavilion.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/rainy_picnic_pavilion_calendar_edit/
+   PROMPT:
+   A realistic outdoor photograph of a small park pavilion with a distinctive dark-red shingled roof, situated beside a calm pond with cattails at the edge. Wooden picnic tables sit under the pavilion, surrounded by green grass and a few trees. Overcast, grey sky suggesting imminent rain. Natural daytime lighting, snapshot style, no readable text or signs.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: park pavilion with dark-red shingled roof, located beside a pond with cattails, wooden picnic tables under the pavilion, overcast grey sky suggesting rain, green grass and surrounding trees
+
+
+3. estate_armchair_photo_confirm
+   SAVE AS: armchair.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/estate_armchair_photo_confirm/
+   PROMPT:
+   A realistic photograph of a vintage green velvet armchair with turned wooden legs, sitting in a sunlit estate-sale living room. The chair has deep emerald-green velvet upholstery, a high rounded back, padded armrests, and dark turned wooden legs with slightly worn brass casters. Soft natural window light, wooden floor, a few other furniture pieces softly blurred in the background. Photographed straight-on at eye level with a smartphone camera; natural color, modest sharpness, no visible text, no price tag, no signage.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: green velvet upholstery, armchair with padded back and armrests, turned wooden legs, vintage estate-sale setting, no readable text or price tags
+
+
+4. hike_trailhead_change_add_rider
+   SAVE AS: pine_hollow_trailhead.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/hike_trailhead_change_add_rider/
+   PROMPT:
+   A realistic outdoor daytime photograph of a hiking trailhead entrance. A large carved wooden bear statue stands on the left next to a rustic wooden entrance arch. On the arch is a short carved wooden sign reading exactly 'PINE HOLLOW'. Forested trail and parking area in the background, soft natural light, no other readable text, no people. Photo taken with a phone camera, slightly wide angle.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: large carved wooden bear statue at trailhead, rustic wooden entrance arch, short sign reading PINE HOLLOW, forested trail in background, daytime outdoor lighting
+
+
+5. ramen_storefront_group_calendar
+   SAVE AS: koji_ramen_storefront.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/ramen_storefront_group_calendar/
+   PROMPT:
+   A realistic smartphone photo of a ramen restaurant storefront at dusk. A red fabric awning stretches over the entrance with a small steaming-bowl logo in the center. Above the awning, a large white sign reads 'KOJI RAMEN' in bold black sans-serif letters. Warm interior lighting glows through the glass door, a short line of patrons visible near the entrance, wet pavement reflecting neon. Natural candid phone-camera framing, slight grain, no extra captions or watermarks.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: ramen restaurant storefront, red awning over the entrance, steaming-bowl logo on the awning, large sign reading KOJI RAMEN above the awning, warm interior lighting through glass door, dusk street scene with wet pavement reflections
+
+
+6. bookclub_cafe_photo_relocate
+   SAVE AS: reading_room_storefront.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/bookclub_cafe_photo_relocate/
+   PROMPT:
+   A realistic daytime street-level photograph of a small independent cafe storefront. The cafe has a dark green awning stretched across the front with the words 'The Reading Room' painted in clean white serif lettering on the awning valance. Below the awning are large front windows with a few small round tables visible inside, a chalkboard menu easel on the sidewalk, and a wooden front door. Warm afternoon light, pedestrians blurred in the background, natural photograph with shallow depth of field. No other readable text anywhere in the image.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: small independent cafe storefront, dark green awning across the front, white serif lettering on the awning reading 'The Reading Room', front windows with round tables visible inside, chalkboard menu easel on the sidewalk, wooden front door, daytime street-level photograph, warm afternoon light
+
+
+7. soccer_pitch_flood_cancel
+   SAVE AS: riverside_pitch_flooded.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/soccer_pitch_flood_cancel/
+   PROMPT:
+   A realistic outdoor smartphone photo of a community soccer pitch on a cloudy, wet morning. The entire field is covered in standing water with large puddles pooling across the grass, muddy patches, and a clearly unplayable surface. Soccer goalposts are visible in the background. Overcast sky, wet grass, no people, no legible text or signs. Natural lighting, slightly desaturated colors, taken from the sideline as if by a passerby.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: outdoor grass soccer pitch, standing water and large puddles across the field, muddy, saturated turf, soccer goalposts visible, overcast wet weather, clearly unplayable condition
+
+
+8. trifle_potluck_calendar_by_attendee
+   SAVE AS: trifle_dessert.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/trifle_potluck_calendar_by_attendee/
+   PROMPT:
+   A realistic amateur food photo of a homemade trifle dessert in a clear glass bowl, showing distinct layers: sponge cake fingers, creamy yellow custard, and fresh red berries (strawberries and raspberries) on top, sitting on a wooden dining table with soft natural kitchen light, no visible text or labels, shallow depth of field, phone-camera quality.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: clear glass trifle bowl, layered dessert with visible strata, sponge cake layer, custard layer, fresh berries on top, homemade amateur food photography aesthetic
+
+
+9. pet_sitting_shift_handoff
+   SAVE AS: dana_cat_feeding.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/pet_sitting_shift_handoff/
+   PROMPT:
+   A natural indoor photograph of a cat's feeding station in a kitchen corner. An orange tabby cat with a white front right paw sits calmly next to two small color-coded food bins on the floor: a blue bin labeled for dry kibble on the left and a red bin for wet food on the right. Soft daylight from a nearby window, realistic home environment, slightly candid phone-photo composition, no readable text, no people.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: orange tabby cat, white front paw on the cat, two food bins, blue food bin, red food bin, home kitchen corner setting, candid phone-photo lighting
+
+
+10. garden_pest_damage_workday
+   SAVE AS: garden_tomato_pest.jpg
+   PASTE TO: pare/scenarios/multimodal_benchmark/assets/image_assets/garden_pest_damage_workday/
+   PROMPT:
+   A realistic close-up photograph of a tomato plant bed in a community garden, taken in morning light. Several tomato plant leaves are badly chewed and ragged with large irregular holes, and a couple of thick bright-green hornworm caterpillars with diagonal white stripes and a small horn at the rear are visible resting on the stems and underside of the leaves. Some leaves are partially defoliated and brown at the edges. Soil, wooden raised-bed framing, and a few intact tomato fruits are visible in the background. Natural outdoor lighting, shallow depth of field, photojournalistic style, no text, no signs, no captions.
+   
+   Constraints:
+   - Photorealistic natural photograph; prefer objects/scenes over documents or forms.
+   - Little or no readable text. If any text is required, keep only the essential short fields from the prompt.
+   - Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.
+   - No people unless the prompt explicitly requires them.
+   - Visual requirements: tomato plants in a raised garden bed, leaves with large irregular chewed holes and ragged edges, one or more large bright green hornworm caterpillars with diagonal white stripes and a rear horn, partially defoliated tomato foliage, natural outdoor morning light, community-garden setting
