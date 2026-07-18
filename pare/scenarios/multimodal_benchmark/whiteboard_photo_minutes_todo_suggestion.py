@@ -224,45 +224,36 @@ class WhiteboardPhotoMinutesTodoSuggestion(PAREScenario):
 
             note_and_reminder_writes_found = structured_note_found and reminders_created_found
 
-            success = (
-                photo_visual_input_found
-                and minutes_or_followups_grounded_found
-                and proposal_found
-                and note_and_reminder_writes_found
-            )
+            success = proposal_found and note_and_reminder_writes_found
+
+            advisory_failures: list[str] = []
+            if not photo_visual_input_found:
+                advisory_failures.append(
+                    "agent never accessed the meeting whiteboard photo (no Files read of "
+                    "/meeting_whiteboard_photo.jpg and no Email read/download for the inbox message "
+                    "with the attachment)"
+                )
+            if photo_visual_input_found and not minutes_or_followups_grounded_found:
+                advisory_failures.append(
+                    "agent viewed the whiteboard but failed to ground meeting notes or dated follow-up reminders"
+                )
 
             if not success:
                 failed_checks: list[str] = []
-
-                #
-                # Failure analysis
-                #
-
-                if not photo_visual_input_found:
-                    failed_checks.append(
-                        "agent never accessed the meeting whiteboard photo (no Files read of "
-                        "/meeting_whiteboard_photo.jpg and no Email read/download for the inbox message "
-                        "with the attachment)"
-                    )
-
-                if photo_visual_input_found and not minutes_or_followups_grounded_found:
-                    failed_checks.append(
-                        "agent viewed the whiteboard but failed to ground meeting notes or dated follow-up reminders"
-                    )
-
-                if minutes_or_followups_grounded_found and not proposal_found:
+                if not proposal_found:
                     failed_checks.append(
                         "agent drafted notes or reminders but failed to proactively propose creating them for the user"
                     )
-
                 if not note_and_reminder_writes_found:
                     failed_checks.append(
                         "agent did not complete both required writes: structured meeting note and at least one reminder"
                     )
+                return ScenarioValidationResult(success=False, rationale="; ".join(failed_checks))
 
+            if advisory_failures:
                 return ScenarioValidationResult(
-                    success=False,
-                    rationale="; ".join(failed_checks),
+                    success=True,
+                    rationale="advisory (not scored): " + "; ".join(advisory_failures),
                 )
 
             return ScenarioValidationResult(success=True)

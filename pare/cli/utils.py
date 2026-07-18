@@ -143,6 +143,7 @@ MODELS_MAP = {
     # GEMINI Models
     "gemini-3-pro": {"model_name": "gemini/gemini-3-pro-preview", "provider": "gemini"},
     "gemini-3-flash": {"model_name": "gemini/gemini-3-flash-preview", "provider": "gemini"},
+    "gemini-3.1-pro": {"model_name": "gemini/gemini-3.1-pro-preview", "provider": "gemini"},
 }
 
 

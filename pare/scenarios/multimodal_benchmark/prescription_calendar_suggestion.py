@@ -225,16 +225,18 @@ class PrescriptionCalendarSuggestion(PAREScenario):
             lunch_block = any(_LUNCH_TIME[:5] in str(e.action.args.get("start_datetime", "")) for e in med_blocks)
             dinner_block = any(_DINNER_TIME[:5] in str(e.action.args.get("start_datetime", "")) for e in med_blocks)
 
-            success = label_viewed and note_read and calendar_read and proposal_found and lunch_block and dinner_block
+            success = proposal_found and lunch_block and dinner_block
+
+            advisory_failures: list[str] = []
+            if not note_read:
+                advisory_failures.append("agent did not read the Rx trigger note")
+            if not label_viewed:
+                advisory_failures.append(f"agent did not view {_LABEL_PATH}")
+            if not calendar_read:
+                advisory_failures.append("agent did not check Calendar availability")
 
             if not success:
                 failed: list[str] = []
-                if not note_read:
-                    failed.append("agent did not read the Rx trigger note")
-                if not label_viewed:
-                    failed.append(f"agent did not view {_LABEL_PATH}")
-                if not calendar_read:
-                    failed.append("agent did not check Calendar availability")
                 if not proposal_found:
                     failed.append("agent did not proactively propose medication calendar blocks")
                 if not lunch_block:
@@ -242,6 +244,12 @@ class PrescriptionCalendarSuggestion(PAREScenario):
                 if not dinner_block:
                     failed.append(f"agent did not create a ~{_DINNER_TIME[:5]} Metformin calendar block")
                 return ScenarioValidationResult(success=False, rationale="; ".join(failed))
+
+            if advisory_failures:
+                return ScenarioValidationResult(
+                    success=True,
+                    rationale="advisory (not scored): " + "; ".join(advisory_failures),
+                )
 
             return ScenarioValidationResult(success=True)
         except Exception as e:

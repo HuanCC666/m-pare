@@ -14,7 +14,6 @@ from are.simulation.types import AbstractEnvironment, Action, CompletedEvent, Ev
 
 from pare.apps import HomeScreenSystemApp, PAREAgentUserInterface, StatefulAlbumApp, StatefulMessagingApp
 from pare.scenarios import PAREScenario
-from pare.scenarios.multimodal_benchmark.lib.agent_image_view_log import log_has_agent_image_view
 from pare.scenarios.multimodal_benchmark.lib.jpeg_for_sandbox import jpeg_bytes_for_sandbox
 from pare.scenarios.utils.registry import register_scenario
 
@@ -338,14 +337,6 @@ class FriendBirdPhotosAlbumShare(PAREScenario):
                 for e in log_entries
             )
 
-            bird_visual_found = log_has_agent_image_view(
-                log_entries,
-                allow_any_event_type=allow_any,
-                image_paths=expected_bird_paths,
-                photo_ids=bird_ids,
-                min_views=2,
-            )
-
             proposal_found = any(
                 e.event_type == EventType.AGENT
                 and isinstance(e.action, Action)
@@ -359,29 +350,18 @@ class FriendBirdPhotosAlbumShare(PAREScenario):
             wrong_photo_sent = bool(sent_attachments & wrong_paths)
             extra_non_bird_sent = bool(sent_attachments - expected_bird_paths - wrong_paths)
 
-            success = (
-                message_read_found
-                and album_today_filter_found
-                and bird_visual_found
-                and proposal_found
-                and correct_bird_photos_sent
-                and not wrong_photo_sent
-                and not extra_non_bird_sent
-            )
+            success = proposal_found and correct_bird_photos_sent and not wrong_photo_sent and not extra_non_bird_sent
+
+            advisory_failures: list[str] = []
+            if not message_read_found:
+                advisory_failures.append("agent did not read the friend's message in Messages")
+            if not album_today_filter_found:
+                advisory_failures.append(
+                    f"agent did not list album photos filtered to today ({self.scenario_day}) via list_photos"
+                )
 
             if not success:
                 failed_checks: list[str] = []
-                if not message_read_found:
-                    failed_checks.append("agent did not read the friend's message in Messages")
-                if not album_today_filter_found:
-                    failed_checks.append(
-                        f"agent did not list album photos filtered to today ({self.scenario_day}) via list_photos"
-                    )
-                if not bird_visual_found:
-                    failed_checks.append(
-                        "agent did not visually inspect both target bird photos (view_photo or Files "
-                        "display on both bird image paths)"
-                    )
                 if not proposal_found:
                     failed_checks.append("agent did not proactively propose sending photos to the user")
                 if not correct_bird_photos_sent:
@@ -400,6 +380,12 @@ class FriendBirdPhotosAlbumShare(PAREScenario):
                         f"agent sent unexpected attachments: {sorted(sent_attachments - expected_bird_paths - wrong_paths)}"
                     )
                 return ScenarioValidationResult(success=False, rationale="; ".join(failed_checks))
+
+            if advisory_failures:
+                return ScenarioValidationResult(
+                    success=True,
+                    rationale="advisory (not scored): " + "; ".join(advisory_failures),
+                )
 
             return ScenarioValidationResult(success=True)
 

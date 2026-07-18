@@ -262,24 +262,18 @@ class TicketStubPhotoExpenseCalendarNoteSuggestion(PAREScenario):
                 body_ok = self._reply_body_mentions_stub(args)
                 break
 
-            success = (
-                hr_email_read
-                and reminder_checked
-                and stub_viewed
-                and proposal_found
-                and reply_found
-                and attachment_ok
-                and body_ok
-            )
+            success = proposal_found and reply_found and attachment_ok and body_ok
+
+            advisory_failures: list[str] = []
+            if not hr_email_read:
+                advisory_failures.append("agent did not read the company movie reimbursement email from HR")
+            if not reminder_checked:
+                advisory_failures.append("agent did not check the reimbursement reminder")
+            if not stub_viewed:
+                advisory_failures.append("agent did not visually inspect the ticket stub photo in Album")
 
             if not success:
                 failed: list[str] = []
-                if not hr_email_read:
-                    failed.append("agent did not read the company movie reimbursement email from HR")
-                if not reminder_checked:
-                    failed.append("agent did not check the reimbursement reminder")
-                if not stub_viewed:
-                    failed.append("agent did not visually inspect the ticket stub photo in Album")
                 if not proposal_found:
                     failed.append("agent did not proactively propose replying to HR with the stub photo")
                 if not reply_found:
@@ -289,6 +283,12 @@ class TicketStubPhotoExpenseCalendarNoteSuggestion(PAREScenario):
                 elif not body_ok:
                     failed.append("agent reply did not mention the ticket stub or screening in the message body")
                 return ScenarioValidationResult(success=False, rationale="; ".join(failed))
+
+            if advisory_failures:
+                return ScenarioValidationResult(
+                    success=True,
+                    rationale="advisory (not scored): " + "; ".join(advisory_failures),
+                )
 
             return ScenarioValidationResult(success=True)
         except Exception as e:

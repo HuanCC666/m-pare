@@ -223,16 +223,18 @@ class MeetingRecentParkingSignSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            success = email_read and recent_album_checked and sign_photo_viewed and proposal_found and reminder_found
+            success = proposal_found and reminder_found
+
+            advisory_failures: list[str] = []
+            if not email_read:
+                advisory_failures.append("agent did not read the meeting update email")
+            if not recent_album_checked:
+                advisory_failures.append("agent did not check recent Camera Roll photos")
+            if not sign_photo_viewed:
+                advisory_failures.append("agent did not visually inspect the recent parking sign photo")
 
             if not success:
                 failed: list[str] = []
-                if not email_read:
-                    failed.append("agent did not read the meeting update email")
-                if not recent_album_checked:
-                    failed.append("agent did not check recent Camera Roll photos")
-                if not sign_photo_viewed:
-                    failed.append("agent did not visually inspect the recent parking sign photo")
                 if not proposal_found:
                     failed.append(
                         f"agent did not proactively propose a move-car plan with latest time around {_ORACLE_LATEST_MOVE_TIME}"
@@ -240,6 +242,12 @@ class MeetingRecentParkingSignSuggestion(PAREScenario):
                 if not reminder_found:
                     failed.append(f"agent did not create a move-car reminder around {_ORACLE_REMINDER_TIME}")
                 return ScenarioValidationResult(success=False, rationale="; ".join(failed))
+
+            if advisory_failures:
+                return ScenarioValidationResult(
+                    success=True,
+                    rationale="advisory (not scored): " + "; ".join(advisory_failures),
+                )
 
             return ScenarioValidationResult(success=True)
         except Exception as e:

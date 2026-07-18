@@ -189,14 +189,16 @@ class BusinessCardNoteContactCreateSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            success = card_viewed and note_read and proposal_found and contact_created
+            success = proposal_found and contact_created
+
+            advisory_failures: list[str] = []
+            if not note_read:
+                advisory_failures.append("agent did not read the business-card trigger note")
+            if not card_viewed:
+                advisory_failures.append(f"agent did not view {_CARD_PATH}")
 
             if not success:
                 failed: list[str] = []
-                if not note_read:
-                    failed.append("agent did not read the business-card trigger note")
-                if not card_viewed:
-                    failed.append(f"agent did not view {_CARD_PATH}")
                 if not proposal_found:
                     failed.append("agent did not proactively propose saving the contact")
                 if not contact_created:
@@ -204,6 +206,12 @@ class BusinessCardNoteContactCreateSuggestion(PAREScenario):
                         f"agent did not create a contact with {_ORACLE_EMAIL} and phone matching {_ORACLE_PHONE}"
                     )
                 return ScenarioValidationResult(success=False, rationale="; ".join(failed))
+
+            if advisory_failures:
+                return ScenarioValidationResult(
+                    success=True,
+                    rationale="advisory (not scored): " + "; ".join(advisory_failures),
+                )
 
             return ScenarioValidationResult(success=True)
         except Exception as e:

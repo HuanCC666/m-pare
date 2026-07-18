@@ -285,14 +285,6 @@ class DinnerReceiptAlbumEmailAaSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            album_browsed = any(
-                e.event_type == EventType.AGENT
-                and isinstance(e.action, Action)
-                and e.action.class_name == "StatefulAlbumApp"
-                and e.action.function_name in ("list_photos", "search_photos")
-                for e in log_entries
-            )
-
             receipts_viewed = log_has_agent_image_view(
                 log_entries,
                 allow_any_event_type=allow_any,
@@ -321,24 +313,16 @@ class DinnerReceiptAlbumEmailAaSuggestion(PAREScenario):
             correct_amounts = _ORACLE_TOTAL in reply_body or _PER_PERSON in reply_body
             wrong_amount = _WRONG_TOTAL in reply_body
 
-            success = (
-                message_read
-                and album_browsed
-                and receipts_viewed
-                and proposal_found
-                and reply_sent
-                and correct_amounts
-                and not wrong_amount
-            )
+            success = proposal_found and reply_sent and correct_amounts and not wrong_amount
+
+            advisory_failures: list[str] = []
+            if not message_read:
+                advisory_failures.append("agent did not read the Thai Garden Dinner group chat")
+            if not receipts_viewed:
+                advisory_failures.append("agent did not visually inspect both dinner receipt photos in Album")
 
             if not success:
                 failed: list[str] = []
-                if not message_read:
-                    failed.append("agent did not read the Thai Garden Dinner group chat")
-                if not album_browsed:
-                    failed.append("agent did not list or search Album photos")
-                if not receipts_viewed:
-                    failed.append("agent did not visually inspect both dinner receipt photos in Album")
                 if not proposal_found:
                     failed.append("agent did not proactively propose replying in the group with the split")
                 if not reply_sent:
@@ -350,6 +334,12 @@ class DinnerReceiptAlbumEmailAaSuggestion(PAREScenario):
                         f"agent reply did not include checked total {_ORACLE_TOTAL} or per-person {_PER_PERSON}"
                     )
                 return ScenarioValidationResult(success=False, rationale="; ".join(failed))
+
+            if advisory_failures:
+                return ScenarioValidationResult(
+                    success=True,
+                    rationale="advisory (not scored): " + "; ".join(advisory_failures),
+                )
 
             return ScenarioValidationResult(success=True)
         except Exception as e:

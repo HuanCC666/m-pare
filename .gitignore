@@ -244,5 +244,6 @@ pare/scenarios/multimodal_benchmark/assets
 
 # Python template ignores lib/ globally; keep scenario helper package tracked
 !pare/scenarios/multimodal_benchmark/lib/
+!pare/scenarios/generated_multimodal_scenarios/lib/
 !pare/scenarios/multimodal_benchmark/lib/**
 pare/scenarios/multimodal_benchmark/lib/__pycache__/

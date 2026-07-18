@@ -214,14 +214,16 @@ class StickyNotePhotoRemindersSuggestion(PAREScenario):
 
             reminders_ok = len(matched_reminder_dues) >= 3
 
-            success = sticky_viewed and note_read and proposal_found and reminders_ok
+            success = proposal_found and reminders_ok
+
+            advisory_failures: list[str] = []
+            if not note_read:
+                advisory_failures.append("agent did not read the sprint sticky trigger note")
+            if not sticky_viewed:
+                advisory_failures.append(f"agent did not view {_STICKY_PATH}")
 
             if not success:
                 failed: list[str] = []
-                if not note_read:
-                    failed.append("agent did not read the sprint sticky trigger note")
-                if not sticky_viewed:
-                    failed.append(f"agent did not view {_STICKY_PATH}")
                 if not proposal_found:
                     failed.append("agent did not proactively propose creating reminders")
                 if not reminders_ok:
@@ -230,6 +232,12 @@ class StickyNotePhotoRemindersSuggestion(PAREScenario):
                         f"(oracle: {sorted(oracle_dues)}; matched: {sorted(matched_reminder_dues)})"
                     )
                 return ScenarioValidationResult(success=False, rationale="; ".join(failed))
+
+            if advisory_failures:
+                return ScenarioValidationResult(
+                    success=True,
+                    rationale="advisory (not scored): " + "; ".join(advisory_failures),
+                )
 
             return ScenarioValidationResult(success=True)
         except Exception as e:

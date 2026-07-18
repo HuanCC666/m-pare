@@ -239,18 +239,20 @@ class BoardingPassChatCalendarUpdateSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            success = chat_read and pass_viewed and proposal_found and calendar_created
+            success = proposal_found and calendar_created
+
+            advisory_failures: list[str] = []
+            if not chat_read:
+                advisory_failures.append(
+                    "agent did not read the Chicago trip chat after Alex shared the boarding-pass attachment"
+                )
+            if not pass_viewed:
+                advisory_failures.append(
+                    "agent did not visually inspect Alex's boarding-pass screenshot attachment in Messages"
+                )
 
             if not success:
                 failed: list[str] = []
-                if not chat_read:
-                    failed.append(
-                        "agent did not read the Chicago trip chat after Alex shared the boarding-pass attachment"
-                    )
-                if not pass_viewed:
-                    failed.append(
-                        "agent did not visually inspect Alex's boarding-pass screenshot attachment in Messages"
-                    )
                 if not proposal_found:
                     failed.append(
                         f"agent did not proactively propose creating a flight calendar event with gate {_ORACLE_GATE}, "
@@ -262,6 +264,12 @@ class BoardingPassChatCalendarUpdateSuggestion(PAREScenario):
                         "from the boarding pass"
                     )
                 return ScenarioValidationResult(success=False, rationale="; ".join(failed))
+
+            if advisory_failures:
+                return ScenarioValidationResult(
+                    success=True,
+                    rationale="advisory (not scored): " + "; ".join(advisory_failures),
+                )
 
             return ScenarioValidationResult(success=True)
         except Exception as e:

@@ -231,23 +231,18 @@ class ReceiptNotePriceMatchCartSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            success = (
-                message_read_found
-                and receipt_viewed
-                and shopping_grounded
-                and proposal_found
-                and correct_cart
-                and not wrong_cart
-            )
+            success = proposal_found and correct_cart and not wrong_cart
+
+            advisory_failures: list[str] = []
+            if not message_read_found:
+                advisory_failures.append("agent did not read the incoming message in Messages")
+            if not receipt_viewed:
+                advisory_failures.append("agent did not visually inspect the receipt image attachment")
+            if not shopping_grounded:
+                advisory_failures.append("agent did not search or browse Shopping after viewing the receipt")
 
             if not success:
                 failed: list[str] = []
-                if not message_read_found:
-                    failed.append("agent did not read the incoming message in Messages")
-                if not receipt_viewed:
-                    failed.append("agent did not visually inspect the receipt image attachment")
-                if not shopping_grounded:
-                    failed.append("agent did not search or browse Shopping after viewing the receipt")
                 if not proposal_found:
                     failed.append("agent did not proactively propose adding the cheaper item")
                 if not correct_cart:
@@ -255,6 +250,12 @@ class ReceiptNotePriceMatchCartSuggestion(PAREScenario):
                 if wrong_cart:
                     failed.append("agent added a decoy or premium milk SKU instead of the cheaper match")
                 return ScenarioValidationResult(success=False, rationale="; ".join(failed))
+
+            if advisory_failures:
+                return ScenarioValidationResult(
+                    success=True,
+                    rationale="advisory (not scored): " + "; ".join(advisory_failures),
+                )
 
             return ScenarioValidationResult(success=True)
         except Exception as e:

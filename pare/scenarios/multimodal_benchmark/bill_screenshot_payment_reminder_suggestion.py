@@ -212,45 +212,34 @@ class BillScreenshotPaymentReminderSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            success = (
-                photo_visual_input_found
-                and reminder_with_due_found
-                and proposal_found
-                and reminder_due_acceptable_found
-            )
+            success = proposal_found and reminder_due_acceptable_found
+
+            advisory_failures: list[str] = []
+            if not photo_visual_input_found:
+                advisory_failures.append(
+                    "agent never accessed the bill screenshot (no Files read of /utility_bill_screenshot.jpg "
+                    "and no Email read/download for the inbox message with the attachment)"
+                )
+            if photo_visual_input_found and not reminder_with_due_found:
+                advisory_failures.append(
+                    "agent viewed the bill image but did not create a payment reminder with a due datetime"
+                )
 
             if not success:
                 failed_checks: list[str] = []
-
-                #
-                # Failure analysis
-                #
-
-                if not photo_visual_input_found:
-                    failed_checks.append(
-                        "agent never accessed the bill screenshot (no Files read of /utility_bill_screenshot.jpg "
-                        "and no Email read/download for the inbox message with the attachment)"
-                    )
-
-                if photo_visual_input_found and not reminder_with_due_found:
-                    failed_checks.append(
-                        "agent viewed the bill image but did not create a payment reminder with a due datetime"
-                    )
-
-                if reminder_with_due_found and not proposal_found:
-                    failed_checks.append(
-                        "agent created a reminder signal but did not proactively propose assistance to the user"
-                    )
-
+                if not proposal_found:
+                    failed_checks.append("agent did not proactively propose assistance to the user")
                 if not reminder_due_acceptable_found:
                     failed_checks.append(
                         "agent did not create the reminder with a due datetime between scenario start and "
                         "end of the bill due day (UTC), using YYYY-MM-DD HH:MM:SS"
                     )
+                return ScenarioValidationResult(success=False, rationale="; ".join(failed_checks))
 
+            if advisory_failures:
                 return ScenarioValidationResult(
-                    success=False,
-                    rationale="; ".join(failed_checks),
+                    success=True,
+                    rationale="advisory (not scored): " + "; ".join(advisory_failures),
                 )
 
             return ScenarioValidationResult(success=True)

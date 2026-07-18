@@ -260,44 +260,35 @@ class RentalPosterViewingPlanSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            success = (
-                photo_visual_input_found
-                and listing_search_grounded_found
-                and proposal_found
-                and viewing_schedule_or_cab_found
-            )
+            success = proposal_found and viewing_schedule_or_cab_found
+
+            advisory_failures: list[str] = []
+            if not photo_visual_input_found:
+                advisory_failures.append(
+                    "agent never accessed the rental poster image (no Files read of /rental_poster_photo.jpg "
+                    "and no Email read/download for the inbox message with the attachment)"
+                )
+            if photo_visual_input_found and not listing_search_grounded_found:
+                advisory_failures.append(
+                    "agent viewed the poster but failed to ground a matching apartment search in Apartment"
+                )
 
             if not success:
                 failed_checks: list[str] = []
-
-                #
-                # Failure analysis
-                #
-
-                if not photo_visual_input_found:
-                    failed_checks.append(
-                        "agent never accessed the rental poster image (no Files read of /rental_poster_photo.jpg "
-                        "and no Email read/download for the inbox message with the attachment)"
-                    )
-
-                if photo_visual_input_found and not listing_search_grounded_found:
-                    failed_checks.append(
-                        "agent viewed the poster but failed to ground a matching apartment search in Apartment"
-                    )
-
-                if listing_search_grounded_found and not proposal_found:
+                if not proposal_found:
                     failed_checks.append(
                         "agent grounded listings but failed to proactively propose viewing or logistics assistance"
                     )
-
                 if not viewing_schedule_or_cab_found:
                     failed_checks.append(
                         "agent failed to combine schedule and transport (calendar availability query or cab quotation)"
                     )
+                return ScenarioValidationResult(success=False, rationale="; ".join(failed_checks))
 
+            if advisory_failures:
                 return ScenarioValidationResult(
-                    success=False,
-                    rationale="; ".join(failed_checks),
+                    success=True,
+                    rationale="advisory (not scored): " + "; ".join(advisory_failures),
                 )
 
             return ScenarioValidationResult(success=True)

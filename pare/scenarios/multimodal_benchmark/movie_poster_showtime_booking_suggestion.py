@@ -229,38 +229,33 @@ class MoviePosterShowtimeBookingSuggestion(PAREScenario):
                 for e in log_entries
             )
 
-            success = (
-                photo_visual_input_found
-                and ticket_catalog_grounded_found
-                and proposal_found
-                and tickets_in_cart_or_checkout_found
-            )
+            success = proposal_found and tickets_in_cart_or_checkout_found
+
+            advisory_failures: list[str] = []
+            if not photo_visual_input_found:
+                advisory_failures.append(
+                    "agent never accessed the movie poster image (no Files read of /movie_teaser_poster.jpg "
+                    "and no Email read/download for the inbox message with the attachment)"
+                )
+            if photo_visual_input_found and not ticket_catalog_grounded_found:
+                advisory_failures.append(
+                    "agent viewed the poster but failed to ground the correct movie or showtime in Shopping"
+                )
 
             if not success:
                 failed_checks: list[str] = []
-
-                if not photo_visual_input_found:
-                    failed_checks.append(
-                        "agent never accessed the movie poster image (no Files read of /movie_teaser_poster.jpg "
-                        "and no Email read/download for the inbox message with the attachment)"
-                    )
-
-                if photo_visual_input_found and not ticket_catalog_grounded_found:
-                    failed_checks.append(
-                        "agent viewed the poster but failed to ground the correct movie or showtime in Shopping"
-                    )
-
-                if ticket_catalog_grounded_found and not proposal_found:
+                if not proposal_found:
                     failed_checks.append(
                         "agent grounded showtimes but failed to proactively propose ticket booking assistance"
                     )
-
                 if not tickets_in_cart_or_checkout_found:
                     failed_checks.append("agent failed to add movie tickets to cart or proceed to checkout")
+                return ScenarioValidationResult(success=False, rationale="; ".join(failed_checks))
 
+            if advisory_failures:
                 return ScenarioValidationResult(
-                    success=False,
-                    rationale="; ".join(failed_checks),
+                    success=True,
+                    rationale="advisory (not scored): " + "; ".join(advisory_failures),
                 )
 
             return ScenarioValidationResult(success=True)

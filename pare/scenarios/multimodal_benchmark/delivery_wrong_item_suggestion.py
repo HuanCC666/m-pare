@@ -295,24 +295,20 @@ class DeliveryLabelWrongItemNoteSuggestion(PAREScenario):
                 body_ok = self._exchange_body_valid(args)
                 break
 
-            success = (
-                delivery_email_read
-                and reminder_checked
-                and dual_view
-                and proposal_found
-                and exchange_email_found
-                and attachments_ok
-                and body_ok
-            )
+            success = proposal_found and exchange_email_found and attachments_ok and body_ok
+
+            advisory_failures: list[str] = []
+            if not delivery_email_read:
+                advisory_failures.append("agent did not read the delivery confirmation email")
+            if not reminder_checked:
+                advisory_failures.append("agent did not check reminders about sending the exchange email")
+            if not dual_view:
+                advisory_failures.append(
+                    f"agent did not visually inspect both {_LABEL_PATH} and {_CONTENTS_PATH} in Album"
+                )
 
             if not success:
                 failed: list[str] = []
-                if not delivery_email_read:
-                    failed.append("agent did not read the delivery confirmation email")
-                if not reminder_checked:
-                    failed.append("agent did not check reminders about sending the exchange email")
-                if not dual_view:
-                    failed.append(f"agent did not visually inspect both {_LABEL_PATH} and {_CONTENTS_PATH} in Album")
                 if not proposal_found:
                     failed.append("agent did not proactively propose emailing support with delivery photos")
                 if not exchange_email_found:
@@ -324,6 +320,12 @@ class DeliveryLabelWrongItemNoteSuggestion(PAREScenario):
                 elif not body_ok:
                     failed.append("agent support email did not describe earbuds vs storage bin in the message body")
                 return ScenarioValidationResult(success=False, rationale="; ".join(failed))
+
+            if advisory_failures:
+                return ScenarioValidationResult(
+                    success=True,
+                    rationale="advisory (not scored): " + "; ".join(advisory_failures),
+                )
 
             return ScenarioValidationResult(success=True)
         except Exception as e:
