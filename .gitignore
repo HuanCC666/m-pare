@@ -240,7 +240,14 @@ data/annotations/
 # Git worktrees
 .worktrees/
 
-pare/scenarios/multimodal_benchmark/assets
+# Local OS junk under multimodal assets
+pare/scenarios/multimodal_benchmark/assets/**/.DS_Store
+
+# Generator description-placeholder scratch (prompts/manifests); not used at scenario runtime
+pare/scenarios/multimodal_benchmark/assets/description/
+
+# Generator run trajectories (local debugging artifacts)
+pare/scenarios/generator/step_trajectory/
 
 # Python template ignores lib/ globally; keep scenario helper package tracked
 !pare/scenarios/multimodal_benchmark/lib/

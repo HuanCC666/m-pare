@@ -88,7 +88,7 @@ GLOBAL_CONTEXT_PROMPT = textwrap.dedent(
     3. **Step 1.5 - Visual Assets**: produce a `VisualAssetSpec`/`assets.json` plan for every image that must be visible to the agent.
     4. **Step 2 - Apps & Data**: seed `init_and_populate_apps()` without touching other sections; only pre-existing state belongs here.
     5. **Step 3 - Events Flow**: fully implement `build_events_flow()` with environment + oracle events, using `EventRegisterer.capture_mode()`.
-    6. **Step 4 - Validation**: finish `validate()` with log checks that prove the agent inspected visual evidence, offered help, and completed the task.
+    6. **Step 4 - Validation**: finish `validate()` with exactly two checks: (1) the agent offered a proactive proposal, and (2) the agent completed the promised task correctly.
 
     ## Temporal & Data Alignment
     - Always set `start_time` to a realistic UTC timestamp that matches emails, messages, and calendar entries.
@@ -108,7 +108,7 @@ GLOBAL_CONTEXT_PROMPT = textwrap.dedent(
     - Prefer `SandboxLocalFileSystem.display(...)`, Email image attachments, or `StatefulAlbumApp.view_photo(...)` as the image-byte access path.
     - Do not embed raw image bytes in generated Python; load/copy assets from manifest paths.
     - Use deterministic/local assets for text-heavy images; do not assume a text-only LLM creates image bytes.
-    - Validation must fail if the final action can succeed without an agent image-inspection event.
+    - Image inspection belongs in the event flow when the narrative needs visual grounding; Step 4 validation itself only checks proposal + task completion.
 
     ## Reference Scenarios (use the Read tool)
     Before writing or editing scenario code, use the Read tool to open 1-2 representative scenarios under:
@@ -355,6 +355,12 @@ _SCENARIO_DESCRIPTION_BODY = textwrap.dedent(
     - Every scenario MUST include at least one image asset represented later as a `VisualAssetSpec`.
     - The narrative MUST say whether the image is delivered as an email attachment, seeded in `SandboxLocalFileSystem`, or registered in `StatefulAlbumApp`.
     - A visually grounded action (shopping search, reminder creation, message/email reply, booking plan, etc.) MUST depend on content that cannot be known from filename or text metadata alone.
+    - Prefer photo-first visual evidence (CRITICAL; common failure mode):
+      - Default to real-world photos of objects, places, products, rooms, pets, packages, damage, food, etc. where vision is about appearance/identity/condition — not reading a wall of printed text.
+      - Prefer examples like `rice_cooker_photo_cart_suggestion.py`, `friend_bird_photos_album_share.py`, `delivery_wrong_item_suggestion.py` over appointment-card / permission-slip / vaccine-card OCR documents.
+      - Put dates, times, amounts, names, and other actionable specifics in the email/message/notification body whenever possible. The image should supply visual context the text cannot (what broke, which product, indoor vs outdoor, wrong item in the box, etc.).
+      - If any on-image text is truly required, keep it minimal: at most 1-3 short essential fields (e.g., a due date or product model), never a full form/card/receipt of dense printed text.
+      - Avoid designing narratives whose main multimodal step is "read lots of text off a photographed document" unless the scenario absolutely cannot work otherwise.
     - Keep text-heavy visual facts limited unless they are supplied by deterministic/local assets. Do not ask the generator to invent reliable receipt/bill text through a text-only model.
 
     Socially plausible action ownership (CRITICAL; common failure mode):
@@ -399,7 +405,8 @@ _SCENARIO_DESCRIPTION_BODY = textwrap.dedent(
       - When a workflow involves image attachments, use real local image files resolved from an asset manifest.
       - Prefer stable sandbox paths such as `"/photo.jpg"` or `"/assets/rice_cooker.jpg"` and pass those paths through Email, Files, or Album APIs.
       - Do NOT embed image bytes directly in the generated scenario source; read bytes from the resolved local path and write them into `SandboxLocalFileSystem`.
-      - Validation should check both the final side effect and an agent image-inspection event such as `display(...)`, `view_photo(...)`, or an email read returning image attachments.
+      - Step 4 validation should check only (1) that a proactive proposal was sent and (2) that the final task side effect(s) completed correctly.
+        Image inspection may still appear in the event flow, but do not add a separate validation check for it.
     - Only involve apps and tools that appear in the Selected Apps list (included below) and the Event-Registered App APIs block below.
     - Do NOT introduce new app types or tools that are not present in those context sections.
     - App coverage requirement (CRITICAL):
@@ -511,16 +518,30 @@ _ASSET_PLANNING_BODY = textwrap.dedent(
 
     Rules:
     - Include one `VisualAssetSpec` object for every image that must be visible to the agent.
+    - Prefer at most 5 assets total for photo-like scenarios (cost/latency). If more would help,
+      keep only the images that are required for visual discrimination or the final action.
     - Include `kind`, `generation_prompt`, and `requires_exact_text` for every asset.
     - `kind` should be one of `photo_like`, `document_like`, `screenshot_like`, `product_photo`, or `object_photo`.
+    - Prefer photo-first assets (CRITICAL):
+      - Default `kind` to `photo_like`, `product_photo`, or `object_photo`.
+      - Prefer scenes where the agent must visually recognize objects/places/conditions, not OCR dense printed forms.
+      - Put dates/times/names/amounts in email/message text when possible; do not encode a full schedule or form into the image.
+      - If any on-image text is unavoidable, keep it to at most 1-3 short essential fields and set `requires_exact_text` accordingly.
+      - Avoid `document_like` / `screenshot_like` cards, slips, receipts, bills, and vaccine/appointment forms unless the approved narrative
+        explicitly requires reading that document and cannot be redesigned around a photo + email text split.
     - `source_path` is optional for generated assets but required for local/provided assets.
     - `generation_prompt` must be a safe, concrete image-generation prompt. Keep it photo-like when generation is plausible.
-    - `openai-image` / `fireworks-image` should only generate photo-like assets (`photo_like`, `product_photo`, or `object_photo`) and should not be used
+      Write the prompt so ChatGPT produces a natural photograph with little or no readable text.
+    - `openai-image` / `fireworks-image` / `description-placeholder` should only generate photo-like assets
+      (`photo_like`, `product_photo`, or `object_photo`) and should not be used
       when exact text, prices, small labels, receipts, bills, screenshots, or handwriting must be reproduced reliably.
+    - For `description-placeholder`, write a detailed `generation_prompt` that a human can paste into ChatGPT
+      to produce the photo later; filenames should be stable (e.g. `IMG_2411.jpg`). Prefer object/scene photos over document photos.
     - `filename`, `sandbox_path`, `delivery`, `visual_requirements`, and `ground_truth` must be concrete enough for an `AssetProvider`.
     - Use delivery values such as `email_attachment`, `album_photo`, or `files_display`.
     - Ground truth must contain the visual facts the validation will rely on.
     - Keep text-heavy requirements explicit; set `requires_exact_text` to true and expect a deterministic/user-provided asset.
+      Prefer redesigning the asset to `requires_exact_text: false` with visual (non-text) ground truth whenever possible.
     """
 )
 
@@ -813,55 +834,40 @@ _EVENTS_FLOW_BODY = textwrap.dedent(
 _VALIDATION_BODY = textwrap.dedent(
     """\
     You are the Step 4 validation agent.
-    Design the checks for `validate()` that prove the proactive agent detected the right signals and executed the promised help.
-    - Multimodal scenarios MUST include a strict image inspection check before accepting the final side effect.
-      Use the helper `log_has_agent_image_view(...)` or equivalent event-log logic to prove the agent called an image-observation tool
-      such as `SandboxLocalFileSystem.display(...)`, `StatefulAlbumApp.view_photo(...)`, or an email read that returned image attachments.
-    - Import `log_has_agent_image_view` from `pare.scenarios.multimodal_benchmark.lib.agent_image_view_log` when a scenario relies on visual evidence.
+    Implement `validate()` with EXACTLY TWO checks — no more, no less:
+
+    1) Proposal validation
+       - Prove the proactive agent offered help via `PAREAgentUserInterface.send_message_to_user(...)`.
+       - Do NOT keyword-match proposal text unless the narrative explicitly requires a rare structured phrase.
+       - Do NOT validate proposal acceptance (`accept_proposal`); acceptance is an implementation detail.
+
+    2) Task validation
+       - Prove the agent finished the promised task correctly after the proposal (the user-visible side effect(s)
+         that define success in the narrative: e.g., updated reminder, sent reply, created calendar event, shared photos).
+       - If the task requires multiple coordinated writes (e.g., update reminder AND reply to email), fold them into this
+         single task check (all required writes must pass for `task_completed` to be True).
+       - Prefer equivalence classes when multiple verified tools achieve the same goal (2-4 real alternatives max,
+         chosen ONLY from the "Event-Registered App APIs" block). Do not invent method names.
+
+    Hard constraints:
+    - Do NOT add extra checks (no image-inspection checks, no "list/read before write" checks, no acceptance checks,
+      no optional confirmation/acknowledgement checks). Image inspection may exist in the event flow, but it is not a
+      Step 4 validation criterion.
     - Validation MUST be based only on agent/oracle behavior recorded as `EventType.AGENT` entries.
-      - Do NOT include any checks that require `EventType.ENV` events to appear in the log; treat them as background context only.
-      - When iterating over log entries, always filter to `e.event_type == EventType.AGENT` before applying detailed checks.
-    - Reference key agent/oracle events and arguments that prove success.
-    - Distinguish strict vs flexible checks:
-      - STRICT: core reasoning and coordination must be present (e.g., the agent proposal referencing the right parties, key follow-up actions like messages/emails, calendar reminders actually created).
-      - FLEXIBLE: wording details (exact subject/body strings), cosmetic fields, or small variations in time ranges and titles should not cause failure if the logical behavior is equivalent.
-      - IMPORTANT: Do NOT add new "nice-to-have" strict checks that are not required by the narrative.
-        Examples of typically optional behaviors: sending a final confirmation message after an update, redundant acknowledgements, or extra summaries.
-        Only make a check STRICT if the scenario description explicitly makes that behavior required for success.
-      - Follow the "Validation Flexibility Guidelines" from the multi-step design doc: be strict on logic and data relationships, flexible on surface phrasing and minor formatting.
-      - Do NOT validate proposal acceptance (IMPORTANT):
-        - Avoid adding STRICT checks that the user accepted a proposal (`accept_proposal`). Acceptance is an implementation detail and can vary.
-        - Instead, validate the downstream, user-visible outcomes (the actual tool actions performed, updates created, replies sent, etc.).
-    - Equivalence-class validation (IMPORTANT):
-      - For many scenarios, there may be MULTIPLE valid tool calls that achieve the same high-level goal.
-        Example goals:
-        - "agent informed Sarah" could be satisfied by `StatefulMessagingApp.send_message(...)` OR (if available) a group-conversation send, etc.
-        - "agent observed the inbox" could be satisfied by `list_emails(...)` OR `get_email_by_id(...)` depending on the scenario structure.
-      - When designing a STRICT check for a goal, prefer accepting ANY ONE of a small set of *verified* equivalent functions rather than hardcoding a single method name.
-        - Choose the allowed alternatives ONLY from the "Event-Registered App APIs" block included in this prompt.
-        - Do NOT invent method names. If a function is not listed in the tools/API blocks, you must not check for it.
-      - Keep the allowed alternatives tight and purposeful: 2-4 real options max for each goal, not a broad "accept anything" filter.
-      - Common equivalence examples (calendar):
-        - "agent observed the calendar event details" can be satisfied by `get_calendar_event(...)`, `get_calendar_events_from_to(...)`, or
-          `read_today_calendar_events()` depending on the scenario design (avoid forcing a specific ID-based method if a natural-key read is valid).
-    - Mention the relevant EventType and tool/function each check expects in the log.
-      - Before using EventType, use Read to open `are/simulation/types.py` and inspect which enum members exist; do NOT invent members like `ORACLE` if they are not defined.
-      - Treat entries from `env.event_log.list_view()` as event objects (for example, `CompletedEvent` instances) with attributes such as `event_type` and `action`; do NOT subscript them like dictionaries or lists.
+      - Do NOT require `EventType.ENV` events to appear in the log.
+      - Filter to `e.event_type == EventType.AGENT` before applying checks.
     - Keep checks structurally strict but content-flexible:
-      - For message/email-like actions (such as reply emails, batched replies, and similar tools), do NOT assert on the exact text content in `action.args["content"]`
-        or other free-form strings; those may legitimately vary across successful runs.
-      - In particular, for `PAREAgentUserInterface.send_message_to_user(...)`, do NOT keyword-match on message content unless the scenario explicitly requires
-        a specific structured phrase (rare). Prefer simply asserting that the tool call happened (and, if necessary, that it happened at least once).
-      - Instead, assert that:
-        - The correct app class (for example, `StatefulEmailApp`, `StatefulMessagingApp`) appears in `action.class_name`.
-        - The correct tool or method name appears in `action.function_name` (for example, `reply_to_email`, `send_message`, `send_batch_reply`).
-        - Any required identifiers or structural arguments (such as an `email_id` or a target contact/conversation identifier) are present and non-empty,
-          without over-constraining their exact values unless they must match a specific seeded artifact.
+      - Assert on `action.class_name`, `action.function_name`, and required structural identifiers (e.g., `email_id`,
+        `reminder_id`, due date that must match seeded/visual ground truth).
+      - Do NOT assert on free-form message/email body text.
+    - Before using EventType, use Read to open `are/simulation/types.py` and inspect which enum members exist; do NOT invent members.
+    - Treat `env.event_log.list_view()` entries as event objects with attributes such as `event_type` and `action`;
+      do NOT subscript them like dictionaries or lists.
     - ONLY modify the `validate()` function, keeping other sections intact and preserving WARNING comments.
     - When building the final `ScenarioValidationResult`, set:
-      - `success=True` only if all strict checks pass.
-      - `success=False` otherwise, and include a short `rationale` string that summarizes which critical checks were missing (for example, "no payment reminder email to TechStart found in log" or "calendar reminder event not created").
-      This rationale will be surfaced back to you in future iterations to help you refine the validation logic.
+      - `success=True` only if BOTH checks pass.
+      - `success=False` otherwise, with a short `rationale` naming which of the two checks failed
+        (for example, "no proactive proposal found" or "task not completed: reminder not updated to 2026-07-23").
     Output must be the full python file with only the validate TODO replaced by executable code.
     """
 )
@@ -1160,6 +1166,6 @@ Use the available agent tools to apply your edits:
 - Use the Write tool to update ONLY the `validate()` implementation in the file at {scenario_file_path}, preserving all WARNING comments and structure.
 - Do NOT paste the full updated file contents back into the chat; rely on the Write tool to persist changes.
 
-For your assistant message, return a brief summary of the key validation checks you implemented (1-3 sentences) without including any code.
+For your assistant message, return a brief summary of the two validation checks you implemented (proposal + task) without including any code.
     """
 )

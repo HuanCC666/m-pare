@@ -21,7 +21,11 @@ from pare.scenarios.generator.agent.scenario_generating_agent_orchestrator impor
     ScenarioGeneratingAgentOrchestrator,
 )
 from pare.scenarios.generator.assets import (
+    DEFAULT_DESCRIPTION_DIR,
     DEFAULT_FIREWORKS_IMAGE_MODEL,
+    DEFAULT_GENERATED_SCENARIOS_DIR,
+    DEFAULT_IMAGE_ASSETS_DIR,
+    DEFAULT_IMAGE_GENERATION_MAX_ASSETS,
     DEFAULT_OPENAI_IMAGE_MODEL,
     resolve_fireworks_api_key,
 )
@@ -116,6 +120,8 @@ def validate_asset_provider_args(args: argparse.Namespace) -> None:
                 "--asset-provider fireworks-image requires FIREWORKS_API_KEY "
                 "or a FireConnect-stored Fireworks key (`fireconnect login`)"
             )
+        return
+    if args.asset_provider == "description-placeholder":
         return
     raise ValueError(f"Unsupported asset provider: {args.asset_provider}")
 
@@ -773,9 +779,13 @@ def main() -> None:
     parser.add_argument(
         "--asset-provider",
         dest="asset_provider",
-        choices=["local", "openai-image", "fireworks-image"],
+        choices=["local", "openai-image", "fireworks-image", "description-placeholder"],
         default="local",
-        help="Visual asset provider to use. Defaults to local, which requires --asset-manifest.",
+        help=(
+            "Visual asset provider to use. Defaults to local, which requires --asset-manifest. "
+            "Use description-placeholder to stop after Step 1.5 with ChatGPT-ready .txt "
+            "descriptions and a JSON manifest (no image API required)."
+        ),
     )
     parser.add_argument(
         "--asset-dir",
@@ -800,6 +810,47 @@ def main() -> None:
         type=int,
         default=1,
         help="Maximum image generation attempts per asset. Defaults to 1.",
+    )
+    parser.add_argument(
+        "--image-generation-max-assets",
+        dest="image_generation_max_assets",
+        type=int,
+        default=DEFAULT_IMAGE_GENERATION_MAX_ASSETS,
+        help=(
+            "Maximum number of images/placeholders to generate per scenario. "
+            f"Defaults to {DEFAULT_IMAGE_GENERATION_MAX_ASSETS}."
+        ),
+    )
+    parser.add_argument(
+        "--description-dir",
+        dest="description_dir",
+        type=Path,
+        default=DEFAULT_DESCRIPTION_DIR,
+        help=(
+            "Directory for ChatGPT-ready asset description .txt files "
+            f"(description-placeholder). Defaults to {DEFAULT_DESCRIPTION_DIR}."
+        ),
+    )
+    parser.add_argument(
+        "--image-assets-dir",
+        dest="image_assets_dir",
+        type=Path,
+        default=DEFAULT_IMAGE_ASSETS_DIR,
+        help=(
+            "Directory where manually generated images should be saved "
+            f"(description-placeholder). Defaults to {DEFAULT_IMAGE_ASSETS_DIR}."
+        ),
+    )
+    parser.add_argument(
+        "--generated-scenarios-dir",
+        dest="generated_scenarios_dir",
+        type=Path,
+        default=DEFAULT_GENERATED_SCENARIOS_DIR,
+        help=(
+            "Directory for exported completed scenario Python files "
+            "(named by snake_case scenario_id, e.g. broken_planter_replacement_order.py). "
+            f"Defaults to {DEFAULT_GENERATED_SCENARIOS_DIR}."
+        ),
     )
     parser.add_argument(
         "--apps",
@@ -856,6 +907,10 @@ def main() -> None:
             asset_provider=args.asset_provider,
             image_model=args.image_model,
             image_generation_max_retries=args.image_generation_max_retries,
+            image_generation_max_assets=args.image_generation_max_assets,
+            description_dir=args.description_dir,
+            image_assets_dir=args.image_assets_dir,
+            generated_scenarios_dir=args.generated_scenarios_dir,
         )
         try:
             result = agent.run()
@@ -874,9 +929,21 @@ def main() -> None:
             })
             continue
 
+        status = result.get("status") or "success"
+        if status == "awaiting_images":
+            pending = result.get("pending_images") or {}
+            logging.info(
+                "Run %s/%s paused after asset descriptions. "
+                "Fill images using %s then resume with local manifest %s",
+                idx + 1,
+                num_scenarios,
+                pending.get("pending_manifest_path"),
+                pending.get("local_manifest_path"),
+            )
+
         results.append({
             "run_index": idx + 1,
-            "status": "success",
+            "status": status,
             **result,
         })
 

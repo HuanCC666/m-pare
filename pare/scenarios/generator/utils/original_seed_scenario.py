@@ -78,27 +78,23 @@ class ScenarioName(PAREScenario):
 
     def validate(self, env: AbstractEnvironment) -> ScenarioValidationResult:
         # WARNING: this part is responsible to and can be modified only by validation agent
-        """Validate that agent detects the environment events and made actions accordingly."""
+        """Validate proposal offered and task completed (exactly two checks)."""
         try:
             log_entries = env.event_log.list_view()
-            allow_any_event_type = bool(getattr(env, "oracle_mode", False))
 
-            # TODO: Check Step 1: Agent sent proposal to the user
-            # example: proposal_found = ...
-
-            # TODO: Check Step 2: Agent performed required image inspection before visually grounded action
-            # example:
-            # photo_visual_input_found = log_has_agent_image_view(
-            #     log_entries,
-            #     allow_any_event_type=allow_any_event_type,
-            #     image_path="<<sandbox_path>>",
+            # TODO: Check 1 — Proposal: agent sent a proactive proposal to the user
+            # example: proposal_found = any(
+            #     isinstance(e.action, Action)
+            #     and e.action.class_name == "PAREAgentUserInterface"
+            #     and e.action.function_name == "send_message_to_user"
+            #     for e in log_entries if e.event_type == EventType.AGENT
             # )
 
-            # TODO: Check Step 3(contains one or more checks based on Agent actions): Agent's actions -- Agent interacted with methods in Apps based on previous visual findings
-            # example: execute_action1_found = ...
+            # TODO: Check 2 — Task: agent completed the promised side effect(s) correctly
+            # example: task_completed = ...  # fold all required writes into this single boolean
 
             # TODO: get the success result
-            # example: success = (proposal_found and detect_action1_found and execute_action1_found and ...)
+            # example: success = proposal_found and task_completed
             success = True
             return ScenarioValidationResult(success=success)
 

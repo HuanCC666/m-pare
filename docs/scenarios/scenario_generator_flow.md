@@ -84,7 +84,7 @@ When resuming, the generator reuses the existing working file and previously com
 ## Files Written During Runs
 
 - `pare/scenarios/default_generation_output/editable_seed_scenario.py`
-- `pare/scenarios/default_generation_output/<GeneratedClassName>.py`
+- `pare/scenarios/multimodal_benchmark/generated_scenarios/<scenario_id>.py` (snake_case, e.g. `broken_planter_replacement_order.py`)
 - `pare/scenarios/generator/step_trajectory/trajectory_*/steps.jsonl`
 - `pare/scenarios/generator/step_trajectory/trajectory_*/editable_seed_scenario_step*.py`
 - `pare/scenarios/scenario_metadata.json`

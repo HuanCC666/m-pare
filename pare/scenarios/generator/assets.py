@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -13,11 +14,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
 _SUPPORTED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp", "heic", "bmp"}
 DEFAULT_OPENAI_IMAGE_MODEL = "gpt-image-2"
 DEFAULT_FIREWORKS_IMAGE_MODEL = "accounts/fireworks/models/flux-1-schnell-fp8"
 DEFAULT_IMAGE_GENERATION_MODEL = DEFAULT_OPENAI_IMAGE_MODEL
+DEFAULT_IMAGE_GENERATION_MAX_ASSETS = 5
 _FIREWORKS_IMAGE_BASE_URL = "https://api.fireworks.ai/inference/v1/workflows"
+
+# Default layout under multimodal_benchmark for description-placeholder + exports.
+_MULTIMODAL_BENCHMARK_DIR = Path(__file__).resolve().parents[1] / "multimodal_benchmark"
+DEFAULT_DESCRIPTION_DIR = _MULTIMODAL_BENCHMARK_DIR / "assets" / "description"
+DEFAULT_IMAGE_ASSETS_DIR = _MULTIMODAL_BENCHMARK_DIR / "assets" / "image_assets"
+DEFAULT_GENERATED_SCENARIOS_DIR = _MULTIMODAL_BENCHMARK_DIR / "generated_scenarios"
 
 
 def resolve_fireworks_api_key() -> str | None:
@@ -175,6 +185,158 @@ class LocalAssetProvider:
                 )
             )
         return resolved
+
+
+class DescriptionPlaceholderAssetProvider:
+    """Write ChatGPT-ready photo description .txt files instead of generating images.
+
+    Use this when image APIs are unavailable. After Step 1.5, the generator stops so
+    you can paste each description into ChatGPT, save the resulting image under
+    ``image_dir``, then resume with ``--asset-provider local`` and the emitted
+    local manifest.
+    """
+
+    def __init__(
+        self,
+        *,
+        description_dir: str | Path,
+        image_dir: str | Path,
+        max_assets: int = DEFAULT_IMAGE_GENERATION_MAX_ASSETS,
+        scenario_id: str | None = None,
+    ) -> None:
+        """Configure description/image directories and max number of placeholder assets."""
+        self.description_dir = Path(description_dir)
+        self.image_dir = Path(image_dir)
+        self.max_assets = max(1, max_assets)
+        self.scenario_id = (scenario_id or "pending_scenario").strip() or "pending_scenario"
+
+    def write_placeholders(self, specs: list[VisualAssetSpec]) -> dict[str, Any]:
+        """Write description .txt files plus pending/local manifests; return the pending record."""
+        desc_dir = self.description_dir / self.scenario_id
+        image_dir = self.image_dir / self.scenario_id
+        desc_dir.mkdir(parents=True, exist_ok=True)
+        image_dir.mkdir(parents=True, exist_ok=True)
+
+        selected = specs[: self.max_assets]
+        if len(specs) > self.max_assets:
+            skipped = [spec.asset_id for spec in specs[self.max_assets :]]
+            logger.warning(
+                "description-placeholder capped assets at %s; skipped: %s",
+                self.max_assets,
+                ", ".join(skipped),
+            )
+
+        pending_assets: list[dict[str, Any]] = []
+        local_assets: list[dict[str, Any]] = []
+        for spec in selected:
+            image_filename = spec.filename or f"{spec.asset_id}.jpg"
+            stem = Path(image_filename).stem
+            description_filename = f"{stem}.txt"
+            description_path = desc_dir / description_filename
+            target_path = image_dir / image_filename
+            chatgpt_prompt = self._chatgpt_prompt_for_spec(spec)
+            description_path.write_text(chatgpt_prompt, encoding="utf-8")
+
+            pending_assets.append({
+                "asset_id": spec.asset_id,
+                "description_filename": description_filename,
+                "description_path": str(description_path),
+                "target_filename": image_filename,
+                "target_path": str(target_path),
+                "sandbox_path": spec.sandbox_path,
+                "delivery": spec.delivery,
+                "kind": spec.kind,
+                "generation_prompt": spec.generation_prompt,
+                "visual_requirements": list(spec.visual_requirements),
+                "ground_truth": dict(spec.ground_truth),
+                "requires_exact_text": spec.requires_exact_text,
+                "chatgpt_prompt": chatgpt_prompt,
+                "status": "awaiting_image",
+            })
+            local_assets.append({
+                "asset_id": spec.asset_id,
+                "filename": image_filename,
+                "source_path": str(target_path),
+                "sandbox_path": spec.sandbox_path,
+                "delivery": spec.delivery,
+                "kind": spec.kind,
+                "generation_prompt": spec.generation_prompt,
+                "requires_exact_text": spec.requires_exact_text,
+                "visual_requirements": list(spec.visual_requirements),
+                "ground_truth": dict(spec.ground_truth),
+            })
+
+        pending_path = desc_dir / "pending_images.manifest.json"
+        # Keep resume tooling next to descriptions; image_dir stays paste-only photos.
+        local_manifest_path = desc_dir / "local_assets.manifest.json"
+        drop_guide_path = image_dir / "DROP_IMAGES_HERE.txt"
+        expected_filenames = [asset["target_filename"] for asset in pending_assets]
+        drop_guide_path.write_text(
+            (
+                f"Scenario: {self.scenario_id}\n"
+                "Paste ChatGPT-generated images into this folder using these exact filenames:\n"
+                + "".join(f"- {name}\n" for name in expected_filenames)
+                + "\n"
+                "Then resume with:\n"
+                f"  --asset-provider local --asset-manifest {local_manifest_path} "
+                f"--asset-dir {image_dir} --resume-from-step step2\n"
+            ),
+            encoding="utf-8",
+        )
+        record = {
+            "provider": "description-placeholder",
+            "scenario_id": self.scenario_id,
+            "generated_at": datetime.now(UTC).isoformat(),
+            "max_assets": self.max_assets,
+            "description_dir": str(desc_dir),
+            "image_dir": str(image_dir),
+            "instructions": (
+                "1) Open each *.txt description file under description_dir.\n"
+                "2) Paste the ChatGPT prompt into ChatGPT image generation.\n"
+                "3) Save the generated image as the matching target_filename under image_dir "
+                f"(see {drop_guide_path.name}).\n"
+                "4) Resume the generator with:\n"
+                "   --asset-provider local "
+                f"--asset-manifest {local_manifest_path} "
+                f"--asset-dir {image_dir} "
+                "--resume-from-step step2"
+            ),
+            "pending_manifest_path": str(pending_path),
+            "local_manifest_path": str(local_manifest_path),
+            "drop_guide_path": str(drop_guide_path),
+            "assets": pending_assets,
+        }
+        pending_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        local_manifest_path.write_text(json.dumps({"assets": local_assets}, indent=2), encoding="utf-8")
+        return record
+
+    @staticmethod
+    def _chatgpt_prompt_for_spec(spec: VisualAssetSpec) -> str:
+        requirements = ", ".join(str(item) for item in spec.visual_requirements if str(item).strip())
+        prompt = (spec.generation_prompt or "").strip() or (
+            requirements or f"Photorealistic image for asset {spec.asset_id}"
+        )
+        ground_truth = json.dumps(spec.ground_truth, indent=2, default=str) if spec.ground_truth else "{}"
+        return (
+            f"Asset ID: {spec.asset_id}\n"
+            f"Target filename: {spec.filename or f'{spec.asset_id}.jpg'}\n"
+            f"Kind: {spec.kind}\n"
+            f"Delivery: {spec.delivery}\n"
+            f"Sandbox path: {spec.sandbox_path}\n"
+            "\n"
+            "=== ChatGPT image prompt (copy below) ===\n"
+            f"{prompt}\n"
+            "\n"
+            "Constraints:\n"
+            "- Photorealistic natural photograph; prefer objects/scenes over documents or forms.\n"
+            "- Little or no readable text. If any text is required, keep only the essential short fields from the prompt.\n"
+            "- Natural lighting, no watermarks, no brand logos unless the prompt explicitly requires them.\n"
+            "- No people unless the prompt explicitly requires them.\n"
+            f"- Visual requirements: {requirements or '(none)'}\n"
+            "\n"
+            "Ground truth (for scenario validation; do not render as on-image text):\n"
+            f"{ground_truth}\n"
+        )
 
 
 ImageGenerationClient = Callable[..., bytes]
